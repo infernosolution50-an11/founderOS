@@ -23,7 +23,7 @@ OPENAI_API_KEY=<to be filled>
 
 Do not commit `.env.local` or real secrets. The Supabase publishable key is safe for browser use; keep the service role key and OpenAI key private.
 
-Add the same variables to the Vercel project environment variables for Production, Preview, and Development as needed.
+Add the same variables to the Vercel project environment variables for Production, Preview, and Development as needed. At minimum, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` before deploying so auth pages can initialize Supabase.
 
 ## Local Setup
 

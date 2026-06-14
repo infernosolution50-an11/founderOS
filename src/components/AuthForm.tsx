@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useSupabaseBrowserClient } from "@/hooks/useSupabaseBrowser";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -12,7 +12,7 @@ type AuthFormProps = {
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
-  const supabase = createSupabaseBrowserClient();
+  const supabase = useSupabaseBrowserClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -21,6 +21,11 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!supabase) {
+      toast.error("Supabase is not configured. Add your public Supabase env vars and redeploy.");
+      return;
+    }
+
     setLoading(true);
 
     const result =
@@ -45,6 +50,11 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   async function sendMagicLink() {
+    if (!supabase) {
+      toast.error("Supabase is not configured. Add your public Supabase env vars and redeploy.");
+      return;
+    }
+
     setMagicLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -129,7 +139,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !supabase}
               className="mt-8 w-full rounded-xl bg-os-indigo px-4 py-3 font-semibold text-white transition hover:bg-os-indigo/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Working..." : isLogin ? "Log in" : "Sign up"}
@@ -137,7 +147,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
             <button
               type="button"
-              disabled={!email || magicLoading}
+              disabled={!email || magicLoading || !supabase}
               onClick={sendMagicLink}
               className="mt-3 w-full rounded-xl border border-os-border px-4 py-3 font-semibold text-os-text transition hover:border-os-indigo disabled:cursor-not-allowed disabled:opacity-60"
             >
