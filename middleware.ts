@@ -55,9 +55,18 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  let user = null;
+
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    if (isDashboardRoute) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    return response;
+  }
 
   if (isDashboardRoute && !user) {
     return NextResponse.redirect(new URL("/login", request.url));
