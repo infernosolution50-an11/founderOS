@@ -1,4 +1,6 @@
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 
 type PillSelectorProps = {
   label?: string;
@@ -20,26 +22,28 @@ export function PillSelector({ label, options, value, multiple, onChange }: Pill
   }
 
   return (
-    <div className="rounded-2xl border border-os-border bg-os-surface p-4">
-      {label && <div className="mb-3 font-display text-sm font-semibold text-os-text">{label}</div>}
+    <Card>
+      {label && <div className="mb-3 font-display text-os-sm font-semibold text-os-text">{label}</div>}
       <div className="flex flex-wrap gap-2">
         {options.map((option) => {
           const active = Array.isArray(value) ? value.includes(option) : value === option;
           return (
-            <button
+            <Button
               type="button"
               key={option}
               onClick={() => toggle(option)}
+              variant="secondary"
+              size="md"
               className={cn(
-                "rounded-full border px-3 py-2 text-sm transition",
-                active ? "border-os-indigo bg-os-indigo/20 text-os-text" : "border-os-border bg-os-panel text-os-sub hover:text-os-text"
+                "rounded-full",
+                active ? "border-os-indigo bg-os-indigo/20 text-os-text" : "text-os-sub"
               )}
             >
               {option}
-            </button>
+            </Button>
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }

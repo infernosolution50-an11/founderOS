@@ -1,3 +1,5 @@
+import { Card } from "@/components/ui/Card";
+
 type SliderProps = {
   label: string;
   value: number;
@@ -9,22 +11,24 @@ type SliderProps = {
 
 export function Slider({ label, value, min = 1, max = 10, suffix = "", onChange }: SliderProps) {
   return (
-    <label className="block rounded-2xl border border-os-border bg-os-surface p-4">
+    <Card>
+      <label className="block">
       <div className="flex items-center justify-between gap-4">
-        <span className="font-display text-sm font-semibold text-os-text">{label}</span>
-        <span className="rounded-full bg-os-panel px-3 py-1 text-sm text-os-sub">
+        <span className="font-display text-os-sm font-semibold text-os-text">{label}</span>
+        <span className="min-w-12 rounded-full bg-os-surface px-3 py-1 text-center font-display text-os-sm text-os-sub">
           {value}
           {suffix}
         </span>
       </div>
       <input
-        className="mt-4 w-full accent-os-indigo"
+        className="mt-4 h-4 w-full cursor-pointer accent-os-indigo"
         type="range"
         min={min}
         max={max}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-    </label>
+      </label>
+    </Card>
   );
 }

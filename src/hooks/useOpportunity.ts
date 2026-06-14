@@ -59,8 +59,12 @@ export function useCreateOpportunity() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/opportunities", { method: "POST", body: JSON.stringify({}) });
+    mutationFn: async (payload?: { example?: boolean }) => {
+      const response = await fetch("/api/opportunities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload ?? {})
+      });
       if (!response.ok) throw new Error("Failed to create opportunity");
       return response.json() as Promise<{ opportunity: Opportunity }>;
     },

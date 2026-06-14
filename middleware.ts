@@ -5,6 +5,22 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  const isDashboardRoute = path.startsWith("/dashboard") || path.startsWith("/opportunity");
+  const isAuthRoute = path === "/login" || path === "/signup";
+
+  if (!supabaseUrl || !supabaseKey) {
+    if (isDashboardRoute) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    return NextResponse.next({
+      request: {
+        headers: request.headers
+      }
+    });
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers
@@ -35,10 +51,6 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-
-  const path = request.nextUrl.pathname;
-  const isDashboardRoute = path.startsWith("/dashboard") || path.startsWith("/opportunity");
-  const isAuthRoute = path === "/login" || path === "/signup";
 
   if (isDashboardRoute && !user) {
     return NextResponse.redirect(new URL("/login", request.url));

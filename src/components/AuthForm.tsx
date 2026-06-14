@@ -3,8 +3,10 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { useSupabaseBrowserClient } from "@/hooks/useSupabaseBrowser";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { toast } from "@/components/ui/toast";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -85,7 +87,7 @@ export function AuthForm({ mode }: AuthFormProps) {
                 Research sharper. Execute faster.
               </h1>
               <p className="mt-5 max-w-xl text-lg leading-8 text-os-sub">
-                A dark thinking whiteboard and AI co-founder for founders turning raw opportunities into traction.
+                A dark thinking whiteboard and Ember-powered co-founder for founders turning raw opportunities into traction.
               </p>
             </div>
             <div className="mt-12 grid gap-3 text-sm text-os-sub">
@@ -100,59 +102,46 @@ export function AuthForm({ mode }: AuthFormProps) {
               {isLogin ? "Get back to your opportunity board." : "Start building your founder intelligence workspace."}
             </p>
 
-            {!isLogin && (
-              <label className="mt-8 block text-sm font-medium text-os-sub">
-                Full name
-                <input
-                  value={fullName}
-                  onChange={(event) => setFullName(event.target.value)}
-                  className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-4 py-3 text-os-text outline-none focus:border-os-indigo"
-                  placeholder="Ada Lovelace"
-                />
-              </label>
-            )}
+            <div className="mt-8 grid gap-5">
+              {!isLogin && (
+                <Input label="Full name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Ada Lovelace" />
+              )}
 
-            <label className="mt-6 block text-sm font-medium text-os-sub">
-              Email
-              <input
-                required
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-4 py-3 text-os-text outline-none focus:border-os-indigo"
-                placeholder="you@company.com"
-              />
-            </label>
+              <Input required label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" />
 
-            <label className="mt-6 block text-sm font-medium text-os-sub">
-              Password
-              <input
+              <Input
                 required
+                label="Password"
                 minLength={6}
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-4 py-3 text-os-text outline-none focus:border-os-indigo"
                 placeholder="••••••••"
               />
-            </label>
+            </div>
 
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              size="lg"
               disabled={loading || !supabase}
-              className="mt-8 w-full rounded-xl bg-os-indigo px-4 py-3 font-semibold text-white transition hover:bg-os-indigo/90 disabled:cursor-not-allowed disabled:opacity-60"
+              loading={loading}
+              className="mt-8 w-full"
             >
-              {loading ? "Working..." : isLogin ? "Log in" : "Sign up"}
-            </button>
+              {isLogin ? "Log in" : "Create account"}
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="lg"
               disabled={!email || magicLoading || !supabase}
               onClick={sendMagicLink}
-              className="mt-3 w-full rounded-xl border border-os-border px-4 py-3 font-semibold text-os-text transition hover:border-os-indigo disabled:cursor-not-allowed disabled:opacity-60"
+              loading={magicLoading}
+              className="mt-3 w-full"
             >
-              {magicLoading ? "Sending..." : "Email me a magic link"}
-            </button>
+              Email me a magic link
+            </Button>
 
             <p className="mt-6 text-center text-sm text-os-sub">
               {isLogin ? "No account yet?" : "Already have an account?"}{" "}

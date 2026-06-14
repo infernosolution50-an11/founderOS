@@ -1,6 +1,8 @@
 import { DocUpload } from "@/components/whiteboard/DocUpload";
 import { formatBytes } from "@/lib/utils";
 import type { WhiteboardTabProps } from "./types";
+import { FileUp } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export function NotesTab({ opportunity, notes, documents, onNotesChange, onAgentAction }: WhiteboardTabProps) {
   return (
@@ -16,7 +18,7 @@ export function NotesTab({ opportunity, notes, documents, onNotesChange, onAgent
             value={String(notes[key as keyof typeof notes] ?? "")}
             onChange={(event) => onNotesChange({ [key]: event.target.value })}
             rows={5}
-            className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text outline-none"
+            className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
           />
         </label>
       ))}
@@ -43,7 +45,13 @@ export function NotesTab({ opportunity, notes, documents, onNotesChange, onAgent
               </button>
             </div>
           ))}
-          {documents.length === 0 && <p className="text-sm text-os-sub">No documents uploaded yet.</p>}
+          {documents.length === 0 && (
+            <EmptyState
+              icon={<FileUp className="h-5 w-5" aria-hidden="true" />}
+              title="Upload a pitch deck, brief, or research doc."
+              description="Ember will synthesize it against your opportunity, surface contradictions, and turn the evidence into sharper next steps."
+            />
+          )}
         </div>
       </section>
     </div>

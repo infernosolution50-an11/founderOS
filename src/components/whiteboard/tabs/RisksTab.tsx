@@ -57,7 +57,7 @@ export function RisksTab({ risks, notes, onRisksChange, onNotesChange, onAgentAc
           value={notes.kill_conditions}
           onChange={(event) => onNotesChange({ kill_conditions: event.target.value })}
           rows={5}
-          className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text outline-none"
+          className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
         />
       </label>
 

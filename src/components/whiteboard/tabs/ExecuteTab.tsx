@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { ListChecks } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { TaskItem } from "@/components/ui/TaskItem";
 import { useCreateTask, useDeleteTask, useUpdateTask } from "@/hooks/useTasks";
 import type { Phase, TaskCategory } from "@/types";
@@ -53,7 +56,7 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
             <input
               value={String(opportunity[key as keyof typeof opportunity] ?? "")}
               onChange={(event) => onOpportunityChange({ [key]: event.target.value })}
-              className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text outline-none"
+              className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
             />
           </label>
         ))}
@@ -96,10 +99,22 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
               onDelete={() => deleteTask.mutate(task.id)}
             />
           ))}
+          {filteredTasks.length === 0 && (
+            <EmptyState
+              icon={<ListChecks className="h-5 w-5" aria-hidden="true" />}
+              title="No tasks yet."
+              description="Ask Ember to generate your first action plan, then turn the best moves into concrete tasks."
+              action={
+                <Button type="button" variant="primary" size="lg" onClick={() => onAgentAction("Generate action plan")}>
+                  Ask Ember
+                </Button>
+              }
+            />
+          )}
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto]">
-          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Add task" className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text outline-none" />
+          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Add task" className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text focus:border-os-indigo" />
           <select value={category} onChange={(event) => setCategory(event.target.value as TaskCategory)} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text">
             {categories.map((option) => (
               <option key={option} value={option}>

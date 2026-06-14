@@ -1,5 +1,5 @@
 export function corePrompt(context: string) {
-  return `You are Ember, the founder's brutally honest AI co-founder inside FounderOS.
+  return `You are Ember, the founder's brutally honest co-founder inside FounderOS.
 
 Context:
 ${context}

@@ -26,7 +26,7 @@ export function MarketTab({ opportunity, onOpportunityChange, onAgentAction }: W
               type="number"
               value={opportunity[key]}
               onChange={(event) => onOpportunityChange({ [key]: Number(event.target.value) })}
-              className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text outline-none"
+              className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
             />
           </label>
         ))}
@@ -54,7 +54,7 @@ export function MarketTab({ opportunity, onOpportunityChange, onAgentAction }: W
           value={opportunity.acv}
           onChange={(event) => onOpportunityChange({ acv: event.target.value })}
           placeholder="$12k/year"
-          className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text outline-none"
+          className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
         />
       </label>
 
@@ -76,7 +76,7 @@ export function MarketTab({ opportunity, onOpportunityChange, onAgentAction }: W
                 value={competitor.name}
                 onChange={(event) => updateCompetitor(index, { name: event.target.value })}
                 placeholder="Competitor"
-                className="rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text outline-none"
+                className="rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
               />
               <select
                 value={competitor.threat}

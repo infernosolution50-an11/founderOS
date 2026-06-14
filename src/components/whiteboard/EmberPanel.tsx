@@ -1,8 +1,11 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Send } from "lucide-react";
-import { toast } from "sonner";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MessageCircle, Send } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { toast } from "@/components/ui/toast";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { agentLabels } from "@/lib/openai/agents";
 import { useEmber } from "@/hooks/useEmber";
 import type { AgentType, EmberMessage } from "@/types";
@@ -14,6 +17,7 @@ type EmberPanelProps = {
   activeTab: string;
   quickAction: string | null;
   onQuickActionHandled: () => void;
+  onRefresh?: () => void | Promise<void>;
 };
 
 const quickActions: Record<string, string[]> = {
@@ -25,16 +29,35 @@ const quickActions: Record<string, string[]> = {
   Notes: ["Synthesize notes", "What am I not asking?"]
 };
 
-export function EmberPanel({ opportunityId, initialMessages, activeAgent, activeTab, quickAction, onQuickActionHandled }: EmberPanelProps) {
+export function EmberPanel({ opportunityId, initialMessages, activeAgent, activeTab, quickAction, onQuickActionHandled, onRefresh }: EmberPanelProps) {
   const [messages, setMessages] = useState<EmberMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [previousResponseId, setPreviousResponseId] = useState<string | undefined>();
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { sendMessage, isStreaming } = useEmber();
+  usePullToRefresh(scrollRef, () => onRefresh?.(), Boolean(onRefresh));
 
   useEffect(() => {
     setMessages(initialMessages);
   }, [initialMessages]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    function updateOffset() {
+      const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setKeyboardOffset(offset);
+    }
+    updateOffset();
+    viewport.addEventListener("resize", updateOffset);
+    viewport.addEventListener("scroll", updateOffset);
+    return () => {
+      viewport.removeEventListener("resize", updateOffset);
+      viewport.removeEventListener("scroll", updateOffset);
+    };
+  }, []);
 
   const visibleMessages = useMemo(() => {
     if (messages.length > 0) return messages;
@@ -44,7 +67,7 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
         opportunity_id: opportunityId,
         user_id: "",
         role: "assistant" as const,
-        content: "Fill in your opportunity and ask me anything. I'm your research co-founder — Ember.",
+        content: "Hi. I'm Ember — your research co-founder. What are you building?",
         agent_type: "core" as const,
         created_at: new Date().toISOString()
       }
@@ -120,22 +143,30 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
             {activeTab}
           </span>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="scrollbar-thin mt-4 flex gap-2 overflow-x-auto pb-1">
           {(quickActions[activeTab] ?? []).map((action) => (
-            <button
+            <Button
               key={action}
               type="button"
               onClick={() => submitMessage(action)}
-              className="rounded-full border border-os-border px-3 py-2 text-xs text-os-sub transition hover:border-os-indigo hover:text-os-text"
+              variant="secondary"
+              size="sm"
+              className="min-w-max rounded-full"
             >
               {action}
-            </button>
+            </Button>
           ))}
         </div>
       </header>
 
-      <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto p-5">
-        {visibleMessages.map((message) => (
+      <div ref={scrollRef} className="scrollbar-thin flex-1 space-y-4 overflow-y-auto p-5">
+        {messages.length === 0 && !streamingText && !isStreaming ? (
+          <EmptyState
+            icon={<MessageCircle className="h-5 w-5" aria-hidden="true" />}
+            title="Hi. I'm Ember."
+            description="Tell me what you're building, or fill in the whiteboard and tap a prompt chip. I'll turn the raw inputs into specific founder advice."
+          />
+        ) : visibleMessages.map((message) => (
           <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[84%]" : "mr-auto max-w-[88%]"}>
             <div className={message.role === "user" ? "rounded-2xl bg-os-indigo p-4 text-white" : "rounded-2xl border border-os-border bg-os-surface p-4 text-os-text"}>
               <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
@@ -150,17 +181,24 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
         {isStreaming && !streamingText && <p className="text-sm text-os-sub">Ember is thinking...</p>}
       </div>
 
-      <form onSubmit={onSubmit} className="sticky bottom-0 border-t border-os-border bg-os-bg p-4">
+      <form onSubmit={onSubmit} className="safe-bottom sticky bottom-0 border-t border-os-border bg-os-bg p-4 keyboard-safe" style={{ paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardOffset}px + 1rem)` }}>
         <div className="flex gap-3">
           <input
+            aria-label="Ask Ember"
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="Ask Ember..."
-            className="min-w-0 flex-1 rounded-xl border border-os-border bg-os-surface px-4 py-3 text-os-text outline-none focus:border-os-indigo"
+            className="h-12 min-w-0 flex-1 rounded-os-md border border-os-border bg-os-surface px-4 text-os-text focus:border-os-indigo"
           />
-          <button type="submit" disabled={isStreaming} className="rounded-xl bg-os-indigo px-4 py-3 text-white disabled:opacity-50">
-            <Send className="h-5 w-5" />
-          </button>
+          <Button
+            type="submit"
+            disabled={isStreaming}
+            loading={isStreaming}
+            size="icon"
+            variant="primary"
+            aria-label="Send message"
+            leftIcon={<Send className="h-5 w-5" aria-hidden="true" />}
+          />
         </div>
       </form>
     </aside>

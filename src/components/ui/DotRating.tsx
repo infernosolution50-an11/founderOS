@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/Card";
 
 type DotRatingProps = {
   label: string;
@@ -8,8 +9,8 @@ type DotRatingProps = {
 
 export function DotRating({ label, value, onChange }: DotRatingProps) {
   return (
-    <div className="rounded-2xl border border-os-border bg-os-surface p-4">
-      <div className="mb-4 font-display text-sm font-semibold text-os-text">{label}</div>
+    <Card>
+      <div className="mb-3 font-display text-os-sm font-semibold text-os-text">{label}</div>
       <div className="flex gap-2">
         {[1, 2, 3, 4, 5].map((dot) => (
           <button
@@ -17,13 +18,15 @@ export function DotRating({ label, value, onChange }: DotRatingProps) {
             type="button"
             onClick={() => onChange(dot)}
             className={cn(
-              "h-4 w-4 rounded-full border transition",
-              dot <= value ? "border-os-indigo bg-os-indigo" : "border-os-border bg-os-panel"
+              "motion-safe-transition flex h-11 min-h-11 w-11 min-w-11 items-center justify-center rounded-full border active:scale-[0.97] md:h-9 md:min-h-9 md:w-9 md:min-w-9",
+              dot <= value ? "border-os-indigo bg-os-indigo/20" : "border-os-border bg-os-surface"
             )}
             aria-label={`${label} ${dot}`}
-          />
+          >
+            <span className={cn("h-3.5 w-3.5 rounded-full", dot <= value ? "bg-os-indigo" : "bg-os-border")} />
+          </button>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }
