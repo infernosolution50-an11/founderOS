@@ -8,6 +8,13 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isDashboardRoute = path.startsWith("/dashboard") || path.startsWith("/opportunity");
   const isAuthRoute = path === "/login" || path === "/signup";
+  const isPublicRoute =
+    path === "/" ||
+    path === "/login" ||
+    path === "/signup" ||
+    path === "/forgot-password" ||
+    path === "/reset-password" ||
+    path.startsWith("/api/auth");
 
   if (!supabaseUrl || !supabaseKey) {
     if (isDashboardRoute) {
@@ -60,9 +67,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
+  if (isPublicRoute) {
+    return response;
+  }
+
   return response;
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/opportunity/:path*", "/login", "/signup"]
+  matcher: ["/dashboard/:path*", "/opportunity/:path*", "/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/:path*"]
 };
