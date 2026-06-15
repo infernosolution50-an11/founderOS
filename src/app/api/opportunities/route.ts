@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
-import { arrayOfStrings, jsonError, numberValue, readJsonObject, stringValue } from "@/lib/api/validation";
+import { arrayOfStrings, isUuid, jsonError, numberValue, readJsonObject, stringValue } from "@/lib/api/validation";
 import { calculateOpportunityScore } from "@/lib/score";
 
 export async function GET() {
@@ -10,7 +10,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("opportunities")
     .select("*")
-    .eq("user_id", user.id)
+    .or(`user_id.eq.${user.id},is_demo.eq.true`)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -26,6 +26,85 @@ export async function POST(request: Request) {
 
   const { body, response: bodyResponse } = await readJsonObject(request);
   if (bodyResponse) return bodyResponse;
+
+  const sourceDemoId = body.sourceDemoId;
+  if (isUuid(sourceDemoId)) {
+    const [{ data: source, error: sourceError }, notes, tasks, risks, messages] = await Promise.all([
+      supabase.from("opportunities").select("*").eq("id", sourceDemoId).eq("is_demo", true).single(),
+      supabase.from("opportunity_notes").select("*").eq("opportunity_id", sourceDemoId).maybeSingle(),
+      supabase.from("tasks").select("*").eq("opportunity_id", sourceDemoId).order("created_at"),
+      supabase.from("risk_assessments").select("*").eq("opportunity_id", sourceDemoId).order("created_at"),
+      supabase.from("ember_messages").select("*").eq("opportunity_id", sourceDemoId).order("created_at")
+    ]);
+
+    if (sourceError || !source) {
+      return jsonError("Demo opportunity not found.", 404);
+    }
+
+    const { id: _sourceId, user_id: _sourceUserId, created_at: _sourceCreatedAt, updated_at: _sourceUpdatedAt, is_demo: _sourceIsDemo, ...sourceFields } = source;
+    const { data: opportunity, error } = await supabase
+      .from("opportunities")
+      .insert({
+        ...sourceFields,
+        name: `${source.name} (Copy)`,
+        user_id: user.id,
+        is_demo: false
+      })
+      .select("*")
+      .single();
+
+    if (error || !opportunity) {
+      console.error("Failed to clone demo opportunity", error);
+      return NextResponse.json({ error: error?.message ?? "Failed to clone demo opportunity" }, { status: 500 });
+    }
+
+    if (notes.data) {
+      const { id: _noteId, user_id: _noteUserId, opportunity_id: _noteOpportunityId, updated_at: _noteUpdatedAt, ...noteFields } = notes.data;
+      const noteResult = await supabase.from("opportunity_notes").insert({
+        ...noteFields,
+        opportunity_id: opportunity.id,
+        user_id: user.id
+      });
+      if (noteResult.error) console.error("Failed to clone demo notes", noteResult.error);
+    }
+
+    if ((tasks.data ?? []).length > 0) {
+      const taskResult = await supabase.from("tasks").insert(
+        (tasks.data ?? []).map(({ id: _id, user_id: _userId, opportunity_id: _opportunityId, created_at: _createdAt, ...task }) => ({
+          ...task,
+          opportunity_id: opportunity.id,
+          user_id: user.id
+        }))
+      );
+      if (taskResult.error) console.error("Failed to clone demo tasks", taskResult.error);
+    }
+
+    if ((risks.data ?? []).length > 0) {
+      const riskResult = await supabase.from("risk_assessments").insert(
+        (risks.data ?? []).map(({ id: _id, user_id: _userId, opportunity_id: _opportunityId, created_at: _createdAt, ...risk }) => ({
+          ...risk,
+          opportunity_id: opportunity.id,
+          user_id: user.id
+        }))
+      );
+      if (riskResult.error) console.error("Failed to clone demo risks", riskResult.error);
+    }
+
+    const starterMessages = (messages.data ?? []).slice(0, 4);
+    if (starterMessages.length > 0) {
+      const messageResult = await supabase.from("ember_messages").insert(
+        starterMessages.map(({ id: _id, user_id: _userId, opportunity_id: _opportunityId, created_at: _createdAt, ...message }) => ({
+          ...message,
+          opportunity_id: opportunity.id,
+          user_id: user.id,
+          response_id: null
+        }))
+      );
+      if (messageResult.error) console.error("Failed to clone demo Ember messages", messageResult.error);
+    }
+
+    return NextResponse.json({ opportunity }, { status: 201 });
+  }
 
   const isExample = Boolean(body.example);
   const opportunitySeed = isExample
@@ -90,6 +169,7 @@ export async function POST(request: Request) {
     .from("opportunities")
     .insert({
       user_id: user.id,
+      is_demo: false,
       ...opportunitySeed,
       opportunity_score: opportunityScore
     })

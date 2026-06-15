@@ -6,6 +6,7 @@ export type WhiteboardTabProps = {
   risks: RiskAssessment[];
   tasks: Task[];
   documents: DocumentRecord[];
+  isReadOnly?: boolean;
   onOpportunityChange: (patch: Partial<Opportunity>) => void;
   onNotesChange: (patch: Partial<OpportunityNotes>) => void;
   onRisksChange: (risks: RiskAssessment[]) => void;

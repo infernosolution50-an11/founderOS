@@ -18,6 +18,7 @@ type EmberPanelProps = {
   quickAction: string | null;
   onQuickActionHandled: () => void;
   onRefresh?: () => void | Promise<void>;
+  readOnly?: boolean;
 };
 
 const quickActions: Record<string, string[]> = {
@@ -29,7 +30,7 @@ const quickActions: Record<string, string[]> = {
   Notes: ["Synthesize notes", "What am I not asking?"]
 };
 
-export function EmberPanel({ opportunityId, initialMessages, activeAgent, activeTab, quickAction, onQuickActionHandled, onRefresh }: EmberPanelProps) {
+export function EmberPanel({ opportunityId, initialMessages, activeAgent, activeTab, quickAction, onQuickActionHandled, onRefresh, readOnly }: EmberPanelProps) {
   const [messages, setMessages] = useState<EmberMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
@@ -75,7 +76,7 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
   }, [messages, opportunityId]);
 
   const submitMessage = useCallback(async (message: string) => {
-    if (!message.trim() || isStreaming) return;
+    if (readOnly || !message.trim() || isStreaming) return;
 
     const userMessage: EmberMessage = {
       id: crypto.randomUUID(),
@@ -118,7 +119,7 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
       toast.error(error instanceof Error ? error.message : "Ember failed to respond");
       setStreamingText("");
     }
-  }, [activeAgent, isStreaming, opportunityId, previousResponseId, sendMessage]);
+  }, [activeAgent, isStreaming, opportunityId, previousResponseId, readOnly, sendMessage]);
 
   useEffect(() => {
     if (!quickAction) return;
@@ -148,10 +149,11 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
             <Button
               key={action}
               type="button"
-              onClick={() => submitMessage(action)}
+            onClick={() => submitMessage(action)}
               variant="secondary"
               size="sm"
               className="min-w-max rounded-full"
+            disabled={readOnly}
             >
               {action}
             </Button>
@@ -164,7 +166,7 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
           <EmptyState
             icon={<MessageCircle className="h-5 w-5" aria-hidden="true" />}
             title="Hi. I'm Ember."
-            description="Tell me what you're building, or fill in the whiteboard and tap a prompt chip. I'll turn the raw inputs into specific founder advice."
+            description={readOnly ? "This is a shared demo thread. Copy the demo to your workspace before asking Ember to write new messages." : "Tell me what you're building, or fill in the whiteboard and tap a prompt chip. I'll turn the raw inputs into specific founder advice."}
           />
         ) : visibleMessages.map((message) => (
           <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[84%]" : "mr-auto max-w-[88%]"}>
@@ -188,11 +190,12 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="Ask Ember..."
+            disabled={readOnly}
             className="h-12 min-w-0 flex-1 rounded-os-md border border-os-border bg-os-surface px-4 text-os-text focus:border-os-indigo"
           />
           <Button
             type="submit"
-            disabled={isStreaming}
+            disabled={isStreaming || readOnly}
             loading={isStreaming}
             size="icon"
             variant="primary"

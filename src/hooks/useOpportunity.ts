@@ -59,7 +59,7 @@ export function useCreateOpportunity() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payload?: { example?: boolean }) => {
+    mutationFn: async (payload?: { example?: boolean; sourceDemoId?: string }) => {
       const response = await fetch("/api/opportunities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

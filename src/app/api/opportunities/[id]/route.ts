@@ -71,12 +71,12 @@ export async function GET(_request: Request, { params }: Params) {
   if (response) return response;
 
   const [{ data: opportunity, error }, notes, risks, tasks, documents, messages] = await Promise.all([
-    supabase.from("opportunities").select("*").eq("id", params.id).eq("user_id", user.id).single(),
-    supabase.from("opportunity_notes").select("*").eq("opportunity_id", params.id).eq("user_id", user.id).maybeSingle(),
-    supabase.from("risk_assessments").select("*").eq("opportunity_id", params.id).eq("user_id", user.id).order("created_at"),
-    supabase.from("tasks").select("*").eq("opportunity_id", params.id).eq("user_id", user.id).order("created_at"),
-    supabase.from("documents").select("*").eq("opportunity_id", params.id).eq("user_id", user.id).order("created_at", { ascending: false }),
-    supabase.from("ember_messages").select("*").eq("opportunity_id", params.id).eq("user_id", user.id).order("created_at")
+    supabase.from("opportunities").select("*").eq("id", params.id).or(`user_id.eq.${user.id},is_demo.eq.true`).single(),
+    supabase.from("opportunity_notes").select("*").eq("opportunity_id", params.id).maybeSingle(),
+    supabase.from("risk_assessments").select("*").eq("opportunity_id", params.id).order("created_at"),
+    supabase.from("tasks").select("*").eq("opportunity_id", params.id).order("created_at"),
+    supabase.from("documents").select("*").eq("opportunity_id", params.id).order("created_at", { ascending: false }),
+    supabase.from("ember_messages").select("*").eq("opportunity_id", params.id).order("created_at")
   ]);
 
   if (error) {
@@ -108,11 +108,15 @@ export async function PATCH(request: Request, { params }: Params) {
     .from("opportunities")
     .select("*")
     .eq("id", params.id)
-    .eq("user_id", user.id)
+    .or(`user_id.eq.${user.id},is_demo.eq.true`)
     .single();
 
   if (currentError || !currentOpportunity) {
     return NextResponse.json({ error: currentError?.message ?? "Opportunity not found" }, { status: 404 });
+  }
+
+  if (currentOpportunity.is_demo) {
+    return jsonError("Shared demos are read-only. Copy this demo to your workspace before editing.", 403);
   }
 
   const opportunityPatch = sanitizeOpportunityPatch(body, currentOpportunity);
@@ -198,6 +202,21 @@ export async function DELETE(_request: Request, { params }: Params) {
 
   const { supabase, user, response } = await requireUser();
   if (response) return response;
+
+  const { data: opportunity, error: opportunityError } = await supabase
+    .from("opportunities")
+    .select("id,is_demo")
+    .eq("id", params.id)
+    .or(`user_id.eq.${user.id},is_demo.eq.true`)
+    .single();
+
+  if (opportunityError || !opportunity) {
+    return NextResponse.json({ error: opportunityError?.message ?? "Opportunity not found" }, { status: 404 });
+  }
+
+  if (opportunity.is_demo) {
+    return jsonError("Shared demos cannot be deleted.", 403);
+  }
 
   const { data: documents } = await supabase.from("documents").select("storage_path").eq("opportunity_id", params.id).eq("user_id", user.id);
   const paths = (documents ?? []).map((document) => document.storage_path).filter(Boolean);

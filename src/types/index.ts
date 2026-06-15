@@ -13,7 +13,8 @@ export type Phase = "0→1" | "1→10" | "10→100";
 
 export type Opportunity = {
   id: string;
-  user_id: string;
+  user_id: string | null;
+  is_demo?: boolean;
   name: string;
   opportunity_score: number;
   urgency: number;
@@ -54,7 +55,7 @@ export type Competitor = {
 export type Task = {
   id: string;
   opportunity_id: string;
-  user_id: string;
+  user_id: string | null;
   text: string;
   category: TaskCategory;
   phase: Phase;
@@ -67,7 +68,7 @@ export type Task = {
 export type EmberMessage = {
   id: string;
   opportunity_id: string;
-  user_id: string;
+  user_id: string | null;
   role: "user" | "assistant";
   content: string;
   agent_type: AgentType;
@@ -78,7 +79,7 @@ export type EmberMessage = {
 export type OpportunityNotes = {
   id: string;
   opportunity_id: string;
-  user_id: string;
+  user_id: string | null;
   thesis: string;
   customer_notes: string;
   open_questions: string;
@@ -90,7 +91,7 @@ export type OpportunityNotes = {
 export type RiskAssessment = {
   id: string;
   opportunity_id: string;
-  user_id: string;
+  user_id: string | null;
   risk_label: string;
   heat_level: HeatLevel;
   mitigation_note: string;
@@ -100,7 +101,7 @@ export type RiskAssessment = {
 export type DocumentRecord = {
   id: string;
   opportunity_id: string;
-  user_id: string;
+  user_id: string | null;
   filename: string;
   storage_path: string;
   extracted_text: string | null;

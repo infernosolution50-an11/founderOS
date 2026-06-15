@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Loader2, MessageCircle, Upload } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { DocUpload } from "@/components/whiteboard/DocUpload";
@@ -17,7 +18,7 @@ import { MoatTab } from "@/components/whiteboard/tabs/MoatTab";
 import { NotesTab } from "@/components/whiteboard/tabs/NotesTab";
 import { ResearchTab } from "@/components/whiteboard/tabs/ResearchTab";
 import { RisksTab } from "@/components/whiteboard/tabs/RisksTab";
-import { useOpportunity, useUpdateOpportunity } from "@/hooks/useOpportunity";
+import { useCreateOpportunity, useOpportunity, useUpdateOpportunity } from "@/hooks/useOpportunity";
 import { calculateOpportunityScore } from "@/lib/score";
 import { cn } from "@/lib/utils";
 import type { AgentType, Opportunity, OpportunityNotes, RiskAssessment } from "@/types";
@@ -50,8 +51,10 @@ function emptyNotes(opportunity: Opportunity): OpportunityNotes {
 }
 
 export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
+  const router = useRouter();
   const { data, isLoading, error, refetch } = useOpportunity(opportunityId);
   const { mutateAsync: saveOpportunity } = useUpdateOpportunity(opportunityId);
+  const createOpportunity = useCreateOpportunity();
   const [activeTab, setActiveTab] = useState<Tab>("Research");
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [notes, setNotes] = useState<OpportunityNotes | null>(null);
@@ -77,6 +80,10 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
 
   useEffect(() => {
     if (!didHydrate.current || !opportunity || !notes) return;
+    if (opportunity.is_demo) {
+      setSaveStatus("saved");
+      return;
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveStatus("saving");
 
@@ -118,16 +125,38 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     return <div className="min-h-screen bg-os-bg p-8 text-os-red">Unable to load this opportunity.</div>;
   }
 
+  const isReadOnly = Boolean(opportunity.is_demo);
+  async function copyDemoToWorkspace() {
+    const sourceDemoId = opportunity?.id;
+    if (!opportunity?.is_demo || !sourceDemoId) return;
+    try {
+      const result = await createOpportunity.mutateAsync({ sourceDemoId });
+      toast.success("Demo copied to your workspace.");
+      router.push(`/opportunity/${result.opportunity.id}`);
+    } catch (copyError) {
+      toast.error(copyError instanceof Error ? copyError.message : "Could not copy demo.");
+    }
+  }
+
   const tabProps = {
     opportunity: { ...opportunity, opportunity_score: score },
     notes,
     risks,
     tasks: data.tasks,
     documents: data.documents,
-    onOpportunityChange: (patch: Partial<Opportunity>) => setOpportunity((current) => (current ? { ...current, ...patch } : current)),
-    onNotesChange: (patch: Partial<OpportunityNotes>) => setNotes((current) => (current ? { ...current, ...patch } : current)),
-    onRisksChange: setRisks,
-    onAgentAction: setQuickAction,
+    isReadOnly,
+    onOpportunityChange: (patch: Partial<Opportunity>) => {
+      if (!isReadOnly) setOpportunity((current) => (current ? { ...current, ...patch } : current));
+    },
+    onNotesChange: (patch: Partial<OpportunityNotes>) => {
+      if (!isReadOnly) setNotes((current) => (current ? { ...current, ...patch } : current));
+    },
+    onRisksChange: (nextRisks: RiskAssessment[]) => {
+      if (!isReadOnly) setRisks(nextRisks);
+    },
+    onAgentAction: (message: string) => {
+      if (!isReadOnly) setQuickAction(message);
+    },
     onDocumentsChanged: async () => {
       await refetch();
     }
@@ -138,7 +167,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     opportunity.timing_signals.length > 0;
 
   const activeTabContent = (
-    <div className="animate-fade-in">
+    <div className={cn("animate-fade-in", isReadOnly && "pointer-events-none opacity-75")}>
       {activeTab === "Research" && <ResearchTab {...tabProps} />}
       {activeTab === "Market" && <MarketTab {...tabProps} />}
       {activeTab === "Moat" && <MoatTab {...tabProps} />}
@@ -156,6 +185,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
       activeTab={activeTab}
       quickAction={quickAction}
       onQuickActionHandled={() => setQuickAction(null)}
+      readOnly={isReadOnly}
       onRefresh={async () => {
         await refetch();
       }}
@@ -174,16 +204,23 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
             <input
               aria-label="Opportunity name"
               value={opportunity.name}
-              onChange={(event) => setOpportunity({ ...opportunity, name: event.target.value })}
-              className="h-11 min-w-0 rounded-os-md border border-os-border bg-os-surface px-3 font-display text-base font-semibold text-os-text focus:border-os-indigo md:h-9 md:text-lg"
+              onChange={(event) => !isReadOnly && setOpportunity({ ...opportunity, name: event.target.value })}
+              disabled={isReadOnly}
+              className="h-11 min-w-0 rounded-os-md border border-os-border bg-os-surface px-3 font-display text-base font-semibold text-os-text focus:border-os-indigo disabled:opacity-80 md:h-9 md:text-lg"
             />
           </div>
           <div className="flex items-center gap-3">
-            <Badge tone={saveStatus === "error" ? "red" : saveStatus === "saving" ? "amber" : "green"} className="gap-2">
+            {isReadOnly && <Badge tone="indigo">Shared demo</Badge>}
+            <Badge tone={isReadOnly ? "indigo" : saveStatus === "error" ? "red" : saveStatus === "saving" ? "amber" : "green"} className="gap-2">
               {saveStatus === "saving" ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : <Check className="h-3 w-3" aria-hidden="true" />}
-              {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "Saved"}
+              {isReadOnly ? "Read-only" : saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "Saved"}
             </Badge>
-            <DocUpload compact opportunityId={opportunity.id} onSynthesized={() => refetch()} />
+            {isReadOnly && (
+              <Button type="button" variant="primary" size="sm" loading={createOpportunity.isPending} onClick={copyDemoToWorkspace}>
+                Copy to my workspace
+              </Button>
+            )}
+            <DocUpload compact opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} />
             <OpportunityScore score={score} />
           </div>
         </div>
@@ -211,7 +248,15 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
       <main className="min-h-[calc(100vh-77px)] lg:grid lg:grid-cols-[52fr_48fr]">
         <section className={cn("border-r border-os-border p-4 md:p-5", mobilePanel !== "whiteboard" && "hidden lg:block")}>
           <Tabs items={tabs.map((tab) => ({ value: tab, label: tab }))} value={activeTab} onChange={setActiveTab} className="mb-5" />
-          {hasEarlySignal && activeTab === "Research" && (
+          {isReadOnly && (
+            <div className="mb-5 rounded-os-md border border-os-indigo/40 bg-os-indigo/10 p-4">
+              <p className="text-os-sm text-os-text">This shared demo is read-only for everyone. Copy it to your workspace to edit fields, upload documents, create tasks, or chat with Ember.</p>
+              <Button type="button" variant="primary" size="md" className="mt-3" loading={createOpportunity.isPending} onClick={copyDemoToWorkspace}>
+                Copy to my workspace
+              </Button>
+            </div>
+          )}
+          {!isReadOnly && hasEarlySignal && activeTab === "Research" && (
             <div className="mb-5 rounded-os-md border border-os-indigo/40 bg-os-indigo/10 p-4">
               <p className="text-os-sm text-os-text">You have enough signal for Ember to pressure-test the market angle.</p>
               <Button type="button" variant="primary" size="md" className="mt-3" onClick={() => setQuickAction("Based on what I've entered, analyze the market opportunity")}>
@@ -224,7 +269,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
 
         <div className={cn(mobilePanel !== "ember" && "hidden lg:block")}>{emberPanel}</div>
         <section className={cn("p-4 md:p-5 lg:hidden", mobilePanel !== "docs" && "hidden")}>
-          <DocUpload opportunityId={opportunity.id} onSynthesized={() => refetch()} />
+          <DocUpload opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} />
         </section>
       </main>
     </div>

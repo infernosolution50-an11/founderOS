@@ -9,14 +9,16 @@ type DocUploadProps = {
   opportunityId: string;
   compact?: boolean;
   onSynthesized?: (message: string) => void;
+  disabled?: boolean;
 };
 
-export function DocUpload({ opportunityId, compact, onSynthesized }: DocUploadProps) {
+export function DocUpload({ opportunityId, compact, onSynthesized, disabled }: DocUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [streamText, setStreamText] = useState("");
 
   const uploadFile = useCallback(
     async (file: File) => {
+      if (disabled) return;
       setUploading(true);
       setStreamText("");
 
@@ -67,7 +69,7 @@ export function DocUpload({ opportunityId, compact, onSynthesized }: DocUploadPr
         setUploading(false);
       }
     },
-    [opportunityId, onSynthesized]
+    [disabled, opportunityId, onSynthesized]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -77,6 +79,7 @@ export function DocUpload({ opportunityId, compact, onSynthesized }: DocUploadPr
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"]
     },
     maxSize: 10 * 1024 * 1024,
+    disabled,
     onDrop: (files) => {
       const [file] = files;
       if (file) uploadFile(file);
@@ -88,7 +91,8 @@ export function DocUpload({ opportunityId, compact, onSynthesized }: DocUploadPr
       <button
         {...getRootProps()}
         type="button"
-        className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-sub hover:text-os-text"
+        disabled={disabled}
+        className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-sub hover:text-os-text disabled:cursor-not-allowed disabled:opacity-40"
       >
         <input {...getInputProps()} />
         <Paperclip className="h-5 w-5" />
@@ -105,7 +109,7 @@ export function DocUpload({ opportunityId, compact, onSynthesized }: DocUploadPr
         <input {...getInputProps()} />
         <Upload className="mx-auto h-8 w-8 text-os-indigo" />
         <p className="mt-3 font-display text-sm font-semibold text-os-text">
-          {isDragActive ? "Drop the file here" : "Drop a PDF or DOCX, or click to upload"}
+          {disabled ? "Copy this demo before uploading documents" : isDragActive ? "Drop the file here" : "Drop a PDF or DOCX, or click to upload"}
         </p>
         <p className="mt-1 text-xs text-os-sub">Maximum 10MB. Uploaded privately to your Supabase bucket.</p>
       </div>

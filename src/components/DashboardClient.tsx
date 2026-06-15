@@ -41,6 +41,16 @@ export function DashboardClient() {
     }
   }, [createOpportunity, router]);
 
+  const copyDemoOpportunity = useCallback(async (sourceDemoId: string) => {
+    try {
+      const { opportunity } = await createOpportunity.mutateAsync({ sourceDemoId });
+      toast.success("Demo copied to your workspace.");
+      router.push(`/opportunity/${opportunity.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not copy demo", () => copyDemoOpportunity(sourceDemoId));
+    }
+  }, [createOpportunity, router]);
+
   useEffect(() => {
     if (handledExample.current || isLoading || createOpportunity.isPending) return;
     if (searchParams.get("example") !== "true") return;
@@ -126,18 +136,32 @@ export function DashboardClient() {
                 <OpportunityScore score={opportunity.opportunity_score} />
               </div>
               <div className="mt-6 flex flex-wrap items-center gap-2">
+                {opportunity.is_demo && <Badge tone="indigo">Demo</Badge>}
                 <Badge>{opportunity.phase}</Badge>
                 <Badge>{new Date(opportunity.created_at).toLocaleDateString()}</Badge>
               </div>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="mt-6"
-                onClick={() => confirmDelete(opportunity.id, opportunity.name)}
-              >
-                Delete
-              </Button>
+              {opportunity.is_demo ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  className="mt-6"
+                  loading={createOpportunity.isPending}
+                  onClick={() => copyDemoOpportunity(opportunity.id)}
+                >
+                  Copy to my workspace
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="mt-6"
+                  onClick={() => confirmDelete(opportunity.id, opportunity.name)}
+                >
+                  Delete
+                </Button>
+              )}
             </Card>
           ))}
           {data?.opportunities.length === 0 && (

@@ -12,7 +12,7 @@ import type { WhiteboardTabProps } from "./types";
 const phases: Phase[] = ["0→1", "1→10", "10→100"];
 const categories: TaskCategory[] = ["research", "product", "sales", "ops"];
 
-export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAction }: WhiteboardTabProps) {
+export function ExecuteTab({ opportunity, tasks, isReadOnly, onOpportunityChange, onAgentAction }: WhiteboardTabProps) {
   const [phase, setPhase] = useState<Phase>(opportunity.phase);
   const [categoryFilter, setCategoryFilter] = useState<TaskCategory | "all">("all");
   const [text, setText] = useState("");
@@ -27,18 +27,20 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
   const filteredTasks = tasks.filter((task) => task.phase === phase && (categoryFilter === "all" || task.category === categoryFilter));
 
   async function addTask() {
-    if (!text.trim()) return;
+    if (isReadOnly || !text.trim()) return;
     await createTask.mutateAsync({ text, category, phase, priority, due_date: dueDate || null });
     setText("");
     setDueDate("");
   }
 
   function confirmDeleteTask(id: string, taskText: string) {
+    if (isReadOnly) return;
     if (!window.confirm(`Delete task "${taskText}"?`)) return;
     deleteTask.mutate(id);
   }
 
   async function createActionPlanTasks() {
+    if (isReadOnly) return;
     if (!window.confirm("Create a starter action plan as tasks from Ember?")) return;
 
     const response = await fetch("/api/ember/actions", {
@@ -69,6 +71,7 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
               setPhase(phaseOption);
               onOpportunityChange({ phase: phaseOption });
             }}
+            disabled={isReadOnly}
             className={phase === phaseOption ? "rounded-full bg-os-indigo px-4 py-2 text-white" : "rounded-full border border-os-border px-4 py-2 text-os-sub"}
           >
             {phaseOption} {phaseOption === "0→1" ? "Validate" : phaseOption === "1→10" ? "Build" : "Scale"}
@@ -87,6 +90,7 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
             <input
               value={String(opportunity[key as keyof typeof opportunity] ?? "")}
               onChange={(event) => onOpportunityChange({ [key]: event.target.value })}
+              disabled={isReadOnly}
               className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
             />
           </label>
@@ -101,6 +105,7 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
               key={star}
               type="button"
               onClick={() => onOpportunityChange({ conviction_stars: star })}
+              disabled={isReadOnly}
               className={star <= opportunity.conviction_stars ? "text-2xl text-os-amber" : "text-2xl text-os-muted"}
             >
               ★
@@ -145,7 +150,7 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
               title="No tasks yet."
               description="Ask Ember to generate your first action plan, then turn the best moves into concrete tasks."
               action={
-                <Button type="button" variant="primary" size="lg" onClick={() => onAgentAction("Generate action plan")}>
+                <Button type="button" variant="primary" size="lg" disabled={isReadOnly} onClick={() => onAgentAction("Generate action plan")}>
                   Ask Ember
                 </Button>
               }
@@ -154,32 +159,32 @@ export function ExecuteTab({ opportunity, tasks, onOpportunityChange, onAgentAct
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto]">
-          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Add task" className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text focus:border-os-indigo" />
-          <select value={category} onChange={(event) => setCategory(event.target.value as TaskCategory)} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text">
+          <input disabled={isReadOnly} value={text} onChange={(event) => setText(event.target.value)} placeholder={isReadOnly ? "Copy demo before adding tasks" : "Add task"} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text focus:border-os-indigo disabled:opacity-50" />
+          <select disabled={isReadOnly} value={category} onChange={(event) => setCategory(event.target.value as TaskCategory)} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text disabled:opacity-50">
             {categories.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
             ))}
           </select>
-          <select value={priority} onChange={(event) => setPriority(event.target.value as Priority)} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text">
+          <select disabled={isReadOnly} value={priority} onChange={(event) => setPriority(event.target.value as Priority)} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text disabled:opacity-50">
             {(["low", "medium", "high"] as const).map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
             ))}
           </select>
-          <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text" />
-          <button type="button" onClick={addTask} className="rounded-xl bg-os-indigo px-4 py-2 font-semibold text-white">
+          <input disabled={isReadOnly} type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="rounded-xl border border-os-border bg-os-surface px-3 py-2 text-os-text disabled:opacity-50" />
+          <button type="button" disabled={isReadOnly} onClick={addTask} className="rounded-xl bg-os-indigo px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
             Add
           </button>
         </div>
       </section>
 
-      <button type="button" onClick={() => onAgentAction("Generate action plan")} className="rounded-xl bg-os-indigo px-4 py-3 font-semibold text-white">
+      <button type="button" disabled={isReadOnly} onClick={() => onAgentAction("Generate action plan")} className="rounded-xl bg-os-indigo px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
         Generate action plan
       </button>
-      <button type="button" onClick={createActionPlanTasks} className="ml-3 rounded-xl border border-os-border px-4 py-3 font-semibold text-os-text">
+      <button type="button" disabled={isReadOnly} onClick={createActionPlanTasks} className="ml-3 rounded-xl border border-os-border px-4 py-3 font-semibold text-os-text disabled:cursor-not-allowed disabled:opacity-40">
         Create tasks from Ember
       </button>
     </div>
