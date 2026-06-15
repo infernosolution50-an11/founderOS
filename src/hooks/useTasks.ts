@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Task, TaskCategory } from "@/types";
+import type { Priority, Task, TaskCategory } from "@/types";
 
 type TasksCache = { tasks: Task[] };
 
@@ -19,7 +19,7 @@ export function useCreateTask(opportunityId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (task: { text: string; category: TaskCategory; phase?: string }) => {
+    mutationFn: async (task: { text: string; category: TaskCategory; phase?: string; priority?: Priority; due_date?: string | null }) => {
       const response = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -39,8 +39,8 @@ export function useCreateTask(opportunityId: string) {
         category: task.category,
         phase: (task.phase as Task["phase"]) || "0→1",
         done: false,
-        priority: "medium",
-        due_date: null,
+        priority: task.priority ?? "medium",
+        due_date: task.due_date ?? null,
         created_at: new Date().toISOString()
       };
       queryClient.setQueryData<TasksCache>(["tasks", opportunityId], { tasks: [...(previous?.tasks ?? []), optimisticTask] });

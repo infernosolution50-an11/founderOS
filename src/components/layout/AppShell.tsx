@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { BookOpen, ChevronLeft, CircleHelp, Home, LayoutDashboard, MessageCircle, Search, Settings, Sparkles, Upload } from "lucide-react";
+import { BookOpen, ChevronLeft, CircleHelp, LayoutDashboard, MessageCircle, Settings, Sparkles, Upload } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { CommandPalette, type CommandPaletteItem } from "@/components/ui/CommandPalette";
@@ -16,10 +16,10 @@ type AppShellProps = {
 
 const navItems = [
   { label: "Opportunities", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Whiteboard", href: "/dashboard", icon: BookOpen },
-  { label: "Ember", href: "/dashboard", icon: MessageCircle },
-  { label: "Docs", href: "/dashboard", icon: Upload },
-  { label: "Settings", href: "/dashboard", icon: Settings }
+  { label: "Whiteboard", href: "/dashboard?view=whiteboard", icon: BookOpen },
+  { label: "Ember", href: "/dashboard?view=ember", icon: MessageCircle },
+  { label: "Docs", href: "/docs", icon: Upload },
+  { label: "Settings", href: "/settings", icon: Settings }
 ];
 
 export function AppShell({ userEmail, children }: AppShellProps) {
@@ -37,6 +37,13 @@ export function AppShell({ userEmail, children }: AppShellProps) {
         onSelect: () => router.push("/dashboard")
       },
       {
+        id: "example-opportunity",
+        label: "Open example opportunity",
+        description: "Create a worked founder whiteboard",
+        category: "Opportunities",
+        onSelect: () => router.push("/dashboard?example=true")
+      },
+      {
         id: "ask-ember-market",
         label: "Ask Ember to analyze the market",
         description: "Open the opportunity board and run Market Intel",
@@ -48,7 +55,14 @@ export function AppShell({ userEmail, children }: AppShellProps) {
         label: "Review environment setup",
         description: "Check Supabase and OpenAI deployment requirements",
         category: "Settings",
-        onSelect: () => router.push("/dashboard")
+        onSelect: () => router.push("/settings")
+      },
+      {
+        id: "docs",
+        label: "Review document workflow",
+        description: "Upload, synthesize, download, and delete documents",
+        category: "Settings",
+        onSelect: () => router.push("/docs")
       }
     ],
     [router]
@@ -107,18 +121,12 @@ export function AppShell({ userEmail, children }: AppShellProps) {
             {!collapsed ? (
               <CommandPalette items={commandItems} />
             ) : (
-              <Button
-                type="button"
-                size="icon"
-                variant="secondary"
-                aria-label="Open search"
-                leftIcon={<Search className="h-4 w-4" aria-hidden="true" />}
-              />
+              <CommandPalette items={commandItems} compact />
             )}
           </div>
 
           <div className="mt-auto grid gap-2 border-t border-os-border px-2 pt-4">
-            <Link className={cn("flex min-h-11 items-center gap-3 rounded-os-md px-2 text-os-sm text-os-sub hover:bg-os-panel hover:text-os-text", collapsed && "justify-center")} href="/dashboard">
+            <Link className={cn("flex min-h-11 items-center gap-3 rounded-os-md px-2 text-os-sm text-os-sub hover:bg-os-panel hover:text-os-text", collapsed && "justify-center")} href="/help">
               <CircleHelp className="h-4 w-4" aria-hidden="true" />
               {!collapsed && <span>Help</span>}
             </Link>

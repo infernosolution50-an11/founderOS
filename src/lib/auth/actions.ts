@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createSupabaseServerClient, createSupabaseServiceClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { createSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export type AuthActionResult = {
   error?: string;
@@ -28,9 +28,22 @@ function friendlyAuthError(message?: string) {
   return text;
 }
 
+function passwordPolicyError(password: string) {
+  if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+    return "Use at least 8 characters, one uppercase letter, and one number.";
+  }
+
+  return null;
+}
+
 export async function signUpWithEmail(email: string, password: string, fullName: string): Promise<AuthActionResult> {
   if (!isSupabaseConfigured()) {
     return { error: "Supabase is not configured. Add the public Supabase environment variables and redeploy." };
+  }
+
+  const passwordError = passwordPolicyError(password);
+  if (passwordError) {
+    return { error: passwordError };
   }
 
   const supabase = createSupabaseServerClient();
@@ -46,25 +59,6 @@ export async function signUpWithEmail(email: string, password: string, fullName:
 
   if (error) {
     return { error: friendlyAuthError(error.message) };
-  }
-
-  if (data.user?.id) {
-    try {
-      const service = createSupabaseServiceClient();
-      const { error: profileError } = await service.from("users").upsert({
-        id: data.user.id,
-        email: normalizedEmail,
-        full_name: fullName,
-        plan: "free",
-        created_at: new Date().toISOString()
-      });
-
-      if (profileError) {
-        return { error: "Account created, but the FounderOS profile could not be initialized. Contact support before continuing." };
-      }
-    } catch {
-      return { error: "Account created, but the FounderOS profile could not be initialized. Contact support before continuing." };
-    }
   }
 
   revalidatePath("/signup");
@@ -168,6 +162,11 @@ export async function sendPasswordReset(email: string): Promise<AuthActionResult
 export async function updatePassword(newPassword: string): Promise<AuthActionResult> {
   if (!isSupabaseConfigured()) {
     return { error: "Supabase is not configured. Add the public Supabase environment variables and redeploy." };
+  }
+
+  const passwordError = passwordPolicyError(newPassword);
+  if (passwordError) {
+    return { error: passwordError };
   }
 
   const supabase = createSupabaseServerClient();

@@ -46,6 +46,7 @@ export function TaskItem({ task, onToggle, onDelete }: TaskItemProps) {
           <Badge tone={task.priority === "high" ? "amber" : "neutral"} className="capitalize">
             {task.priority}
           </Badge>
+          {task.due_date && <Badge>{new Date(`${task.due_date}T00:00:00`).toLocaleDateString()}</Badge>}
         </div>
       </div>
       <Button type="button" variant="destructive" size="sm" onClick={onDelete}>

@@ -10,4 +10,5 @@ export type WhiteboardTabProps = {
   onNotesChange: (patch: Partial<OpportunityNotes>) => void;
   onRisksChange: (risks: RiskAssessment[]) => void;
   onAgentAction: (message: string) => void;
+  onDocumentsChanged?: () => void | Promise<void>;
 };

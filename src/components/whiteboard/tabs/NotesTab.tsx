@@ -1,10 +1,36 @@
 import { DocUpload } from "@/components/whiteboard/DocUpload";
 import { formatBytes } from "@/lib/utils";
 import type { WhiteboardTabProps } from "./types";
-import { FileUp } from "lucide-react";
+import { Download, FileUp, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
+import { toast } from "@/components/ui/toast";
 
-export function NotesTab({ opportunity, notes, documents, onNotesChange, onAgentAction }: WhiteboardTabProps) {
+export function NotesTab({ opportunity, notes, documents, onNotesChange, onAgentAction, onDocumentsChanged }: WhiteboardTabProps) {
+  async function downloadDocument(id: string) {
+    const response = await fetch(`/api/documents/${id}`);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.url) {
+      toast.error(payload?.error ?? "Could not create download link.");
+      return;
+    }
+    window.open(payload.url, "_blank", "noopener,noreferrer");
+  }
+
+  async function deleteDocument(id: string, filename: string) {
+    if (!window.confirm(`Delete "${filename}"? This removes the private storage object too.`)) return;
+
+    const response = await fetch(`/api/documents/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      toast.error(payload?.error ?? "Could not delete document.");
+      return;
+    }
+
+    toast.success("Document deleted.");
+    await onDocumentsChanged?.();
+  }
+
   return (
     <div className="space-y-5">
       {[
@@ -27,7 +53,7 @@ export function NotesTab({ opportunity, notes, documents, onNotesChange, onAgent
         Synthesize
       </button>
 
-      <DocUpload opportunityId={opportunity.id} />
+      <DocUpload opportunityId={opportunity.id} onSynthesized={() => onDocumentsChanged?.()} />
 
       <section className="rounded-2xl border border-os-border bg-os-surface p-4">
         <h2 className="font-display text-lg font-semibold text-os-text">Uploaded documents</h2>
@@ -40,9 +66,17 @@ export function NotesTab({ opportunity, notes, documents, onNotesChange, onAgent
                   {formatBytes(document.file_size_bytes)} · {new Date(document.created_at).toLocaleDateString()}
                 </p>
               </div>
-              <button type="button" onClick={() => onAgentAction(`Synthesize document: ${document.filename}`)} className="text-sm text-os-indigo">
-                Synthesize with Ember
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => onAgentAction(`Synthesize document: ${document.filename}`)}>
+                  Synthesize
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => downloadDocument(document.id)} leftIcon={<Download className="h-4 w-4" aria-hidden="true" />}>
+                  Download
+                </Button>
+                <Button type="button" variant="destructive" size="sm" onClick={() => deleteDocument(document.id, document.filename)} leftIcon={<Trash2 className="h-4 w-4" aria-hidden="true" />}>
+                  Delete
+                </Button>
+              </div>
             </div>
           ))}
           {documents.length === 0 && (

@@ -12,16 +12,13 @@ FounderOS is a dark-themed founder intelligence platform for researching and exe
 
 ## Environment Variables
 
-Create `.env.local`:
+Copy `.env.example` to `.env.local` and fill in project-specific values:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://vojwuojfqfdtezeklawb.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_sraWBBJgSzLRjRYj9sPiLA_qWjNLkE2
-SUPABASE_SERVICE_ROLE_KEY=<to be filled>
-OPENAI_API_KEY=<to be filled>
+cp .env.example .env.local
 ```
 
-Do not commit `.env.local` or real secrets. The Supabase publishable key is safe for browser use; keep the service role key and OpenAI key private.
+Do not commit `.env.local` or real secrets. The Supabase publishable/anon key is safe for browser use; keep the service role key and OpenAI key private.
 
 Add the same variables to the Vercel project environment variables for Production, Preview, and Development as needed. At minimum, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` before deploying so auth pages can initialize Supabase.
 
@@ -36,10 +33,10 @@ Open `http://localhost:3000`.
 
 ## Supabase Setup
 
-Apply the initial schema:
+Apply schema migrations:
 
 ```bash
-supabase link --project-ref vojwuojfqfdtezeklawb
+supabase link --project-ref <project-ref>
 supabase db push
 ```
 
@@ -55,7 +52,22 @@ The migration at `supabase/migrations/001_initial_schema.sql` creates:
 - private `documents` storage bucket
 - RLS policies that scope all rows and files to the authenticated user
 
-If using the Supabase dashboard instead of the CLI, run the SQL migration in the SQL editor.
+If using the Supabase dashboard instead of the CLI, run SQL migrations in order from `supabase/migrations`. See `docs/PRODUCTION_RUNBOOK.md` for the production migration flow.
+
+## Quality Gates
+
+```bash
+npm run lint
+npm run test
+npm run build
+npm run typecheck
+```
+
+E2E smoke tests are available with:
+
+```bash
+npm run test:e2e
+```
 
 ## Vercel Deployment
 

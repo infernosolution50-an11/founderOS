@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
+import { checkRateLimit } from "@/lib/api/rateLimit";
+import { isUuid, jsonError } from "@/lib/api/validation";
 import { extractTextFromDocument, supportedDocumentTypes } from "@/lib/extractText";
 import { buildOpportunityContext } from "@/lib/openai/context";
 import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
@@ -13,11 +15,20 @@ export async function POST(request: Request) {
   const { supabase, user, response } = await requireUser();
   if (response) return response;
 
-  const formData = await request.formData();
+  const limited = checkRateLimit(`upload:${user.id}`, 12, 60 * 60 * 1000);
+  if (!limited.allowed) {
+    return NextResponse.json({ error: "Too many uploads. Try again later." }, { status: 429, headers: { "Retry-After": String(limited.retryAfter) } });
+  }
+
+  const formData = await request.formData().catch(() => null);
+  if (!formData) {
+    return jsonError("Invalid upload request.");
+  }
+
   const file = formData.get("file");
   const opportunityId = formData.get("opportunityId");
 
-  if (!(file instanceof File) || typeof opportunityId !== "string") {
+  if (!(file instanceof File) || !isUuid(opportunityId)) {
     return NextResponse.json({ error: "Missing file or opportunityId" }, { status: 400 });
   }
 
@@ -53,7 +64,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: upload.error.message }, { status: 500 });
   }
 
-  const extractedText = await extractTextFromDocument(buffer, file.type);
+  let extractedText = "";
+  try {
+    extractedText = await extractTextFromDocument(buffer, file.type);
+  } catch (extractError) {
+    await supabase.storage.from("documents").remove([storagePath]);
+    console.error("Document text extraction failed", extractError);
+    return NextResponse.json({ error: "Could not read text from this document." }, { status: 400 });
+  }
 
   const { data: document, error: documentError } = await supabase
     .from("documents")
@@ -70,6 +88,7 @@ export async function POST(request: Request) {
     .single();
 
   if (documentError) {
+    await supabase.storage.from("documents").remove([storagePath]);
     return NextResponse.json({ error: documentError.message }, { status: 500 });
   }
 
@@ -98,20 +117,27 @@ export async function POST(request: Request) {
     extra: `Uploaded document text from ${file.name}:\n${extractedText.slice(0, 30000)}`
   });
 
-  const upstream = await fetch(RESPONSES_API_URL, {
-    method: "POST",
-    headers: getOpenAIHeaders(),
-    body: JSON.stringify({
-      model: EMBER_MODEL,
-      instructions: selectAgentPrompt("doc_synthesizer", context),
-      input: message,
-      stream: true,
-      max_output_tokens: 1500
-    })
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(RESPONSES_API_URL, {
+      method: "POST",
+      headers: getOpenAIHeaders(),
+      body: JSON.stringify({
+        model: EMBER_MODEL,
+        instructions: selectAgentPrompt("doc_synthesizer", context),
+        input: message,
+        stream: true,
+        max_output_tokens: 1500
+      })
+    });
+  } catch (openAiError) {
+    console.error("Document synthesis request failed", openAiError);
+    return NextResponse.json({ error: "Document uploaded, but Ember synthesis is unavailable.", document }, { status: 202 });
+  }
 
   if (!upstream.ok || !upstream.body) {
-    return NextResponse.json({ error: "OpenAI Responses API failed", document }, { status: 502 });
+    console.error("Document synthesis failed", await upstream.text().catch(() => ""));
+    return NextResponse.json({ error: "Document uploaded, but Ember synthesis is unavailable.", document }, { status: 202 });
   }
 
   const encoder = new TextEncoder();
@@ -124,29 +150,34 @@ export async function POST(request: Request) {
     async start(controller) {
       const reader = upstream.body!.getReader();
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
 
-        bufferText += decoder.decode(value, { stream: true });
-        const events = bufferText.split("\n\n");
-        bufferText = events.pop() ?? "";
+          bufferText += decoder.decode(value, { stream: true });
+          const events = bufferText.split("\n\n");
+          bufferText = events.pop() ?? "";
 
-        for (const event of events) {
-          const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
-          if (!dataLine) continue;
-          const raw = dataLine.slice(6).trim();
-          if (raw === "[DONE]") continue;
-          const payload = JSON.parse(raw);
+          for (const event of events) {
+            const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
+            if (!dataLine) continue;
+            const raw = dataLine.slice(6).trim();
+            if (raw === "[DONE]") continue;
+            const payload = JSON.parse(raw);
 
-          if (payload.type === "response.created") responseId = payload.response?.id;
-          if (payload.type === "response.output_text.delta") {
-            const text = payload.delta ?? "";
-            assistantContent += text;
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text, document })}\n\n`));
+            if (payload.type === "response.created") responseId = payload.response?.id;
+            if (payload.type === "response.output_text.delta") {
+              const text = payload.delta ?? "";
+              assistantContent += text;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text, document })}\n\n`));
+            }
+            if (payload.type === "response.completed") responseId = payload.response?.id ?? responseId;
           }
-          if (payload.type === "response.completed") responseId = payload.response?.id ?? responseId;
         }
+      } catch (streamError) {
+        console.error("Document synthesis stream failed", streamError);
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "Document synthesis failed.", document })}\n\n`));
       }
 
       await supabase.from("ember_messages").insert({
@@ -154,7 +185,8 @@ export async function POST(request: Request) {
         user_id: user.id,
         role: "assistant",
         content: assistantContent,
-        agent_type: "doc_synthesizer"
+        agent_type: "doc_synthesizer",
+        response_id: responseId ?? null
       });
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", responseId, document })}\n\n`));

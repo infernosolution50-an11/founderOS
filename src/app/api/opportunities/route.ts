@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
+import { arrayOfStrings, jsonError, numberValue, readJsonObject, stringValue } from "@/lib/api/validation";
+import { calculateOpportunityScore } from "@/lib/score";
 
 export async function GET() {
   const { supabase, user, response } = await requireUser();
@@ -22,7 +24,9 @@ export async function POST(request: Request) {
   const { supabase, user, response } = await requireUser();
   if (response) return response;
 
-  const body = await request.json().catch(() => ({}));
+  const { body, response: bodyResponse } = await readJsonObject(request);
+  if (bodyResponse) return bodyResponse;
+
   const isExample = Boolean(body.example);
   const opportunitySeed = isExample
     ? {
@@ -60,23 +64,44 @@ export async function POST(request: Request) {
         opportunity_score: 72
       }
     : {
-        name: body.name || "Untitled Opportunity"
+        name: stringValue(body.name, "Untitled Opportunity") || "Untitled Opportunity"
       };
+
+  const opportunityScore = calculateOpportunityScore({
+    urgency: numberValue(opportunitySeed.urgency, 5, 1, 10),
+    pain: numberValue(opportunitySeed.pain, 5, 1, 10),
+    frequency: numberValue(opportunitySeed.frequency, 5, 1, 10),
+    willingness_to_pay: numberValue(opportunitySeed.willingness_to_pay, 5, 1, 10),
+    tam_m: numberValue(opportunitySeed.tam_m, 0, 0),
+    growth_rate_pct: numberValue(opportunitySeed.growth_rate_pct, 20, 0),
+    domain_expertise: numberValue(opportunitySeed.domain_expertise, 3, 1, 10),
+    network_access: numberValue(opportunitySeed.network_access, 3, 1, 10),
+    unfair_insight: numberValue(opportunitySeed.unfair_insight, 3, 1, 10),
+    moat_network: numberValue(opportunitySeed.moat_network, 5, 1, 10),
+    moat_data: numberValue(opportunitySeed.moat_data, 4, 1, 10),
+    moat_switching: numberValue(opportunitySeed.moat_switching, 6, 1, 10),
+    moat_scale: numberValue(opportunitySeed.moat_scale, 3, 1, 10),
+    moat_brand: numberValue(opportunitySeed.moat_brand, 5, 1, 10),
+    moat_ip: numberValue(opportunitySeed.moat_ip, 2, 1, 10),
+    timing_signals: arrayOfStrings(opportunitySeed.timing_signals)
+  });
 
   const { data, error } = await supabase
     .from("opportunities")
     .insert({
       user_id: user.id,
-      ...opportunitySeed
+      ...opportunitySeed,
+      opportunity_score: opportunityScore
     })
     .select("*")
     .single();
 
   if (error) {
+    console.error("Failed to create opportunity", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  await supabase.from("opportunity_notes").insert({
+  const notesResult = await supabase.from("opportunity_notes").insert({
     opportunity_id: data.id,
     user_id: user.id,
     ...(isExample
@@ -95,7 +120,12 @@ export async function POST(request: Request) {
       : {})
   });
 
-  await supabase.from("ember_messages").insert({
+  if (notesResult.error) {
+    console.error("Failed to create opportunity notes", notesResult.error);
+    return jsonError("Opportunity created, but notes could not be initialized.", 500);
+  }
+
+  const messageResult = await supabase.from("ember_messages").insert({
     opportunity_id: data.id,
     user_id: user.id,
     role: "assistant",
@@ -103,8 +133,12 @@ export async function POST(request: Request) {
     agent_type: "core"
   });
 
+  if (messageResult.error) {
+    console.error("Failed to create initial Ember message", messageResult.error);
+  }
+
   if (isExample) {
-    await supabase.from("tasks").insert([
+    const tasksResult = await supabase.from("tasks").insert([
       {
         opportunity_id: data.id,
         user_id: user.id,
@@ -128,7 +162,12 @@ export async function POST(request: Request) {
       }
     ]);
 
-    await supabase.from("risk_assessments").insert([
+    if (tasksResult.error) {
+      console.error("Failed to create example tasks", tasksResult.error);
+      return jsonError("Example opportunity created, but tasks could not be initialized.", 500);
+    }
+
+    const risksResult = await supabase.from("risk_assessments").insert([
       {
         opportunity_id: data.id,
         user_id: user.id,
@@ -144,6 +183,11 @@ export async function POST(request: Request) {
         mitigation_note: "Force every discovery call to name the daily workflow owner."
       }
     ]);
+
+    if (risksResult.error) {
+      console.error("Failed to create example risks", risksResult.error);
+      return jsonError("Example opportunity created, but risks could not be initialized.", 500);
+    }
   }
 
   return NextResponse.json({ opportunity: data }, { status: 201 });

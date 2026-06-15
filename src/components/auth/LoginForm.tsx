@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { signInWithEmail, signInWithMagicLink } from "@/lib/auth/actions";
 
 export function LoginForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -15,6 +17,12 @@ export function LoginForm() {
   const [seconds, setSeconds] = useState(0);
   const [isPending, startTransition] = useTransition();
   const [isMagicPending, startMagicTransition] = useTransition();
+
+  useEffect(() => {
+    if (searchParams.get("error") === "auth_callback_failed") {
+      setError("We could not complete that auth link. Request a fresh link and try again.");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (seconds <= 0) return;

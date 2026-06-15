@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
+import { isUuid, jsonError, nullableDateValue, phaseValue, priorityValue, readJsonObject, stringValue, taskCategoryValue } from "@/lib/api/validation";
 
 export async function GET(request: Request) {
   const { supabase, user, response } = await requireUser();
@@ -8,8 +9,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const opportunityId = searchParams.get("opportunityId");
 
-  if (!opportunityId) {
-    return NextResponse.json({ error: "Missing opportunityId" }, { status: 400 });
+  if (!isUuid(opportunityId)) {
+    return jsonError("Missing or invalid opportunityId.");
   }
 
   const { data, error } = await supabase
@@ -30,17 +31,40 @@ export async function POST(request: Request) {
   const { supabase, user, response } = await requireUser();
   if (response) return response;
 
-  const body = await request.json();
+  const { body, response: bodyResponse } = await readJsonObject(request);
+  if (bodyResponse) return bodyResponse;
+
+  const opportunityId = body.opportunityId;
+  if (!isUuid(opportunityId)) {
+    return jsonError("Missing or invalid opportunityId.");
+  }
+
+  const text = stringValue(body.text);
+  if (!text) {
+    return jsonError("Task text is required.");
+  }
+
+  const { data: opportunity, error: opportunityError } = await supabase
+    .from("opportunities")
+    .select("id")
+    .eq("id", opportunityId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (opportunityError || !opportunity) {
+    return jsonError("Opportunity not found.", 404);
+  }
+
   const { data, error } = await supabase
     .from("tasks")
     .insert({
-      opportunity_id: body.opportunityId,
+      opportunity_id: opportunityId,
       user_id: user.id,
-      text: body.text,
-      category: body.category,
-      phase: body.phase || "0→1",
-      priority: body.priority || "medium",
-      due_date: body.due_date || null
+      text,
+      category: taskCategoryValue(body.category),
+      phase: phaseValue(body.phase),
+      priority: priorityValue(body.priority),
+      due_date: nullableDateValue(body.due_date)
     })
     .select("*")
     .single();

@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
+function safeNextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return value;
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const next = requestUrl.searchParams.get("next") || "/dashboard";
+  const next = safeNextPath(requestUrl.searchParams.get("next"));
 
   if (!code || !isSupabaseConfigured()) {
     return NextResponse.redirect(new URL("/login?error=auth_callback_failed", requestUrl.origin));

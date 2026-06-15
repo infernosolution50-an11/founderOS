@@ -17,6 +17,7 @@ export type CommandPaletteItem = {
 
 type CommandPaletteProps = {
   items: CommandPaletteItem[];
+  compact?: boolean;
 };
 
 function scoreItem(item: CommandPaletteItem, query: string) {
@@ -34,7 +35,7 @@ function scoreItem(item: CommandPaletteItem, query: string) {
   return score;
 }
 
-export function CommandPalette({ items }: CommandPaletteProps) {
+export function CommandPalette({ items, compact }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -74,9 +75,10 @@ export function CommandPalette({ items }: CommandPaletteProps) {
       <Button
         type="button"
         variant="secondary"
-        size="md"
+        size={compact ? "icon" : "md"}
         onClick={() => setOpen(true)}
         leftIcon={<Search className="h-4 w-4" aria-hidden="true" />}
+        aria-label="Open search"
       >
         Search
       </Button>

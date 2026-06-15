@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, MessageCircle, Upload } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Check, Loader2, MessageCircle, Upload } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { DocUpload } from "@/components/whiteboard/DocUpload";
 import { EmberPanel } from "@/components/whiteboard/EmberPanel";
@@ -126,7 +127,10 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     onOpportunityChange: (patch: Partial<Opportunity>) => setOpportunity((current) => (current ? { ...current, ...patch } : current)),
     onNotesChange: (patch: Partial<OpportunityNotes>) => setNotes((current) => (current ? { ...current, ...patch } : current)),
     onRisksChange: setRisks,
-    onAgentAction: setQuickAction
+    onAgentAction: setQuickAction,
+    onDocumentsChanged: async () => {
+      await refetch();
+    }
   };
 
   const hasEarlySignal =
@@ -163,7 +167,10 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
       <header className="sticky top-0 z-20 border-b border-os-border bg-os-bg/90 px-4 py-3 backdrop-blur md:px-5 md:py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">
-            <div className="font-display text-lg font-semibold text-os-indigo md:text-xl">FounderOS</div>
+            <Link href="/dashboard" className="inline-flex min-h-10 items-center gap-2 rounded-os-md px-2 text-os-sm text-os-sub hover:bg-os-panel hover:text-os-text">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Dashboard
+            </Link>
             <input
               aria-label="Opportunity name"
               value={opportunity.name}
@@ -176,7 +183,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
               {saveStatus === "saving" ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : <Check className="h-3 w-3" aria-hidden="true" />}
               {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "Saved"}
             </Badge>
-            <DocUpload compact opportunityId={opportunity.id} />
+            <DocUpload compact opportunityId={opportunity.id} onSynthesized={() => refetch()} />
             <OpportunityScore score={score} />
           </div>
         </div>
@@ -217,7 +224,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
 
         <div className={cn(mobilePanel !== "ember" && "hidden lg:block")}>{emberPanel}</div>
         <section className={cn("p-4 md:p-5 lg:hidden", mobilePanel !== "docs" && "hidden")}>
-          <DocUpload opportunityId={opportunity.id} />
+          <DocUpload opportunityId={opportunity.id} onSynthesized={() => refetch()} />
         </section>
       </main>
     </div>
