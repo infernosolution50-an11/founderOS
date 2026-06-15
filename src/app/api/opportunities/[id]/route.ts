@@ -127,15 +127,20 @@ export async function PATCH(request: Request, { params }: Params) {
       return jsonError("Notes must be an object.");
     }
 
-    const { error } = await supabase.from("opportunity_notes").upsert({
-      opportunity_id: params.id,
-      user_id: user.id,
-      thesis: stringValue((notes as Record<string, unknown>).thesis),
-      customer_notes: stringValue((notes as Record<string, unknown>).customer_notes),
-      open_questions: stringValue((notes as Record<string, unknown>).open_questions),
-      kill_conditions: stringValue((notes as Record<string, unknown>).kill_conditions),
-      moat_insight: stringValue((notes as Record<string, unknown>).moat_insight)
-    });
+    const { error } = await supabase
+      .from("opportunity_notes")
+      .upsert(
+        {
+          opportunity_id: params.id,
+          user_id: user.id,
+          thesis: stringValue((notes as Record<string, unknown>).thesis),
+          customer_notes: stringValue((notes as Record<string, unknown>).customer_notes),
+          open_questions: stringValue((notes as Record<string, unknown>).open_questions),
+          kill_conditions: stringValue((notes as Record<string, unknown>).kill_conditions),
+          moat_insight: stringValue((notes as Record<string, unknown>).moat_insight)
+        },
+        { onConflict: "opportunity_id" }
+      );
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

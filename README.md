@@ -66,6 +66,12 @@ npm run typecheck
 E2E smoke tests are available with:
 
 ```bash
+npm run test:e2e:smoke
+```
+
+Authenticated E2E coverage uses Playwright storage state and the Supabase service role key to create or update a dedicated test user. Set `E2E_EMAIL` and `E2E_PASSWORD` in `.env.local` to override the local defaults, then run:
+
+```bash
 npm run test:e2e
 ```
 

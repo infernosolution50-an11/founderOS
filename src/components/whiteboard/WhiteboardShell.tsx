@@ -62,16 +62,26 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
   const [quickAction, setQuickAction] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("whiteboard");
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
+  const [dirtyVersion, setDirtyVersion] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didHydrate = useRef(false);
+  const changeVersion = useRef(0);
+  const savedVersion = useRef(0);
 
   useEffect(() => {
     if (!data) return;
+    if (changeVersion.current !== savedVersion.current) return;
     setOpportunity(data.opportunity);
     setNotes(data.notes ?? emptyNotes(data.opportunity));
     setRisks(data.risks);
     didHydrate.current = true;
+    setSaveStatus("saved");
   }, [data]);
+
+  function markDirty() {
+    changeVersion.current += 1;
+    setDirtyVersion(changeVersion.current);
+  }
 
   const score = useMemo(() => {
     if (!opportunity) return 0;
@@ -84,10 +94,12 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
       setSaveStatus("saved");
       return;
     }
+    if (dirtyVersion === savedVersion.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveStatus("saving");
 
     saveTimer.current = setTimeout(async () => {
+      const versionToSave = dirtyVersion;
       try {
         await saveOpportunity({
           ...opportunity,
@@ -95,11 +107,13 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
           notes,
           risks
         });
-        setSaveStatus("saved");
+        savedVersion.current = Math.max(savedVersion.current, versionToSave);
+        setSaveStatus(changeVersion.current === versionToSave ? "saved" : "saving");
       } catch (saveError) {
         setSaveStatus("error");
         toast.error(saveError instanceof Error ? saveError.message : "Couldn't save — tap to retry", () => {
           setOpportunity((current) => (current ? { ...current } : current));
+          markDirty();
         });
       }
     }, 1500);
@@ -107,7 +121,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [notes, opportunity, risks, saveOpportunity, score]);
+  }, [dirtyVersion, notes, opportunity, risks, saveOpportunity, score]);
 
   if (isLoading) {
     return (
@@ -146,13 +160,22 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     documents: data.documents,
     isReadOnly,
     onOpportunityChange: (patch: Partial<Opportunity>) => {
-      if (!isReadOnly) setOpportunity((current) => (current ? { ...current, ...patch } : current));
+      if (!isReadOnly) {
+        markDirty();
+        setOpportunity((current) => (current ? { ...current, ...patch } : current));
+      }
     },
     onNotesChange: (patch: Partial<OpportunityNotes>) => {
-      if (!isReadOnly) setNotes((current) => (current ? { ...current, ...patch } : current));
+      if (!isReadOnly) {
+        markDirty();
+        setNotes((current) => (current ? { ...current, ...patch } : current));
+      }
     },
     onRisksChange: (nextRisks: RiskAssessment[]) => {
-      if (!isReadOnly) setRisks(nextRisks);
+      if (!isReadOnly) {
+        markDirty();
+        setRisks(nextRisks);
+      }
     },
     onAgentAction: (message: string) => {
       if (!isReadOnly) setQuickAction(message);
@@ -204,7 +227,12 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
             <input
               aria-label="Opportunity name"
               value={opportunity.name}
-              onChange={(event) => !isReadOnly && setOpportunity({ ...opportunity, name: event.target.value })}
+              onChange={(event) => {
+                if (!isReadOnly) {
+                  markDirty();
+                  setOpportunity({ ...opportunity, name: event.target.value });
+                }
+              }}
               disabled={isReadOnly}
               className="h-11 min-w-0 rounded-os-md border border-os-border bg-os-surface px-3 font-display text-base font-semibold text-os-text focus:border-os-indigo disabled:opacity-80 md:h-9 md:text-lg"
             />

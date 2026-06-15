@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test tests/e2e/app-smoke.spec.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.0",
