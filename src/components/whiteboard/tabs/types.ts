@@ -14,5 +14,6 @@ export type WhiteboardTabProps = {
   onMilestonesChange: (milestones: Milestone[]) => void;
   onAgentAction: (message: string) => void;
   onFillSection?: (section: string) => void | Promise<void>;
+  onFieldUpdates?: (payload: unknown) => void;
   onDocumentsChanged?: () => void | Promise<void>;
 };

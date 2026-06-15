@@ -9,10 +9,11 @@ type DocUploadProps = {
   opportunityId: string;
   compact?: boolean;
   onSynthesized?: (message: string) => void;
+  onFieldUpdates?: (payload: unknown) => void;
   disabled?: boolean;
 };
 
-export function DocUpload({ opportunityId, compact, onSynthesized, disabled }: DocUploadProps) {
+export function DocUpload({ opportunityId, compact, onSynthesized, onFieldUpdates, disabled }: DocUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [streamText, setStreamText] = useState("");
 
@@ -58,6 +59,9 @@ export function DocUpload({ opportunityId, compact, onSynthesized, disabled }: D
               fullText += payload.text;
               setStreamText((current) => current + payload.text);
             }
+            if (payload.type === "field_updates") {
+              onFieldUpdates?.(payload.payload);
+            }
           }
         }
 
@@ -69,7 +73,7 @@ export function DocUpload({ opportunityId, compact, onSynthesized, disabled }: D
         setUploading(false);
       }
     },
-    [disabled, opportunityId, onSynthesized]
+    [disabled, opportunityId, onFieldUpdates, onSynthesized]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

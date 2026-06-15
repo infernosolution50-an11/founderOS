@@ -21,6 +21,7 @@ import { ResearchTab } from "@/components/whiteboard/tabs/ResearchTab";
 import { RisksTab } from "@/components/whiteboard/tabs/RisksTab";
 import { SignalTab } from "@/components/whiteboard/tabs/SignalTab";
 import { useCreateOpportunity, useOpportunity, useUpdateOpportunity } from "@/hooks/useOpportunity";
+import { normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
 import { calculateOpportunityScore } from "@/lib/score";
 import { cn } from "@/lib/utils";
 import type { AgentType, Milestone, Opportunity, OpportunityNotes, RiskAssessment } from "@/types";
@@ -185,45 +186,50 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
 
   function applyEmberPatch(payload: unknown) {
     if (!opportunity) return;
-    if (!payload || typeof payload !== "object") return;
-    const patch = payload as Record<string, unknown>;
-    const fields = (patch.fields && typeof patch.fields === "object" ? patch.fields : patch) as Record<string, unknown>;
+    const patch = normalizeEmberFieldPatch(payload);
     let updated = 0;
 
-    function unwrapValues(section: unknown) {
-      if (!section || typeof section !== "object" || Array.isArray(section)) return {};
-      return Object.fromEntries(
-        Object.entries(section as Record<string, unknown>).map(([key, value]) => [
-          key,
-          value && typeof value === "object" && "value" in value ? (value as { value: unknown }).value : value
-        ])
-      );
-    }
-
-    const opportunityPatch = unwrapValues(fields.opportunity);
-    if (Object.keys(opportunityPatch).length > 0) {
+    const opportunityPatch = patch.opportunity;
+    const opportunityFieldCount = Object.keys(opportunityPatch).length;
+    if (opportunityFieldCount > 0) {
       markDirty();
       setOpportunity((current) => (current ? { ...current, ...opportunityPatch } : current));
-      updated += Object.keys(opportunityPatch).length;
+      updated += opportunityFieldCount;
     }
 
-    const notesPatch = unwrapValues(fields.notes);
-    if (Object.keys(notesPatch).length > 0) {
+    const notesPatch = patch.notes;
+    const notesFieldCount = Object.keys(notesPatch).length;
+    if (notesFieldCount > 0) {
       markDirty();
       setNotes((current) => (current ? { ...current, ...notesPatch } : current));
-      updated += Object.keys(notesPatch).length;
+      updated += notesFieldCount;
     }
 
-    if (Array.isArray(fields.risks)) {
+    if (patch.risks) {
       markDirty();
-      setRisks(fields.risks as RiskAssessment[]);
-      updated += fields.risks.length;
+      setRisks(
+        patch.risks.map((risk) => ({
+          id: risk.id ?? crypto.randomUUID(),
+          opportunity_id: opportunity.id,
+          user_id: opportunity.user_id,
+          risk_label: risk.risk_label ?? "Untitled risk",
+          heat_level: risk.heat_level ?? "medium",
+          category: risk.category ?? "market",
+          likelihood: risk.likelihood ?? "high",
+          impact: risk.impact ?? "high",
+          mitigation_note: risk.mitigation_note ?? "",
+          owner: risk.owner ?? "Founder",
+          status: risk.status ?? "open",
+          created_at: risk.created_at ?? new Date().toISOString()
+        }))
+      );
+      updated += patch.risks.length;
     }
 
-    if (Array.isArray(fields.milestones)) {
+    if (patch.milestones) {
       markDirty();
       setMilestones(
-        (fields.milestones as Array<Partial<Milestone>>).map((milestone) => ({
+        patch.milestones.map((milestone) => ({
           id: milestone.id ?? crypto.randomUUID(),
           opportunity_id: opportunity.id,
           user_id: opportunity.user_id,
@@ -233,7 +239,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
           created_at: milestone.created_at ?? new Date().toISOString()
         }))
       );
-      updated += fields.milestones.length;
+      updated += patch.milestones.length;
     }
 
     if (updated > 0) {
@@ -313,6 +319,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
       if (!isReadOnly) setQuickAction(message);
     },
     onFillSection: fillSection,
+    onFieldUpdates: applyEmberPatch,
     onDocumentsChanged: async () => {
       await refetch();
     }
@@ -385,7 +392,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
                 Copy to my workspace
               </Button>
             )}
-            <DocUpload compact opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} />
+            <DocUpload compact opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} onFieldUpdates={applyEmberPatch} />
             <OpportunityScore score={score} />
           </div>
         </div>
@@ -451,7 +458,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
 
         <div className={cn(mobilePanel !== "ember" && "hidden lg:block", isEmberCollapsed && "lg:hidden")}>{emberPanel}</div>
         <section className={cn("p-4 md:p-5 lg:hidden", mobilePanel !== "docs" && "hidden")}>
-          <DocUpload opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} />
+          <DocUpload opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} onFieldUpdates={applyEmberPatch} />
         </section>
       </main>
       {isEmberCollapsed && (

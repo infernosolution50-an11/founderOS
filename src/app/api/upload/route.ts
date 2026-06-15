@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { isUuid, jsonError } from "@/lib/api/validation";
+import { extractJsonPayloads, normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
 import { extractTextFromDocument, supportedDocumentTypes } from "@/lib/extractText";
 import { buildOpportunityContext } from "@/lib/openai/context";
 import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
@@ -189,6 +190,10 @@ export async function POST(request: Request) {
         response_id: responseId ?? null
       });
 
+      const [fieldUpdates] = extractJsonPayloads(assistantContent);
+      if (fieldUpdates) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "field_updates", payload: normalizeEmberFieldPatch(fieldUpdates), document })}\n\n`));
+      }
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", responseId, document })}\n\n`));
       controller.close();
     }

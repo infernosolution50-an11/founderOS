@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/components/ui/toast";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { agentLabels } from "@/lib/openai/agents";
+import { extractJsonPayloads } from "@/lib/ember/fieldUpdates";
 import { useEmber } from "@/hooks/useEmber";
 import type { AgentType, EmberMessage } from "@/types";
 
@@ -35,18 +36,6 @@ const quickActions: Record<string, string[]> = {
 };
 
 const emberModelLabel = "gpt-5-mini";
-
-function extractJsonBlocks(content: string) {
-  return [...content.matchAll(/```json\s*([\s\S]*?)```/g)]
-    .map((match) => {
-      try {
-        return JSON.parse(match[1]);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
 
 export function EmberPanel({ opportunityId, initialMessages, activeAgent, activeTab, quickAction, onQuickActionHandled, onRefresh, onFieldUpdates, onCollapse, readOnly }: EmberPanelProps) {
   const [messages, setMessages] = useState<EmberMessage[]>(initialMessages);
@@ -120,7 +109,7 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
       });
 
       setPreviousResponseId(result.responseId);
-      extractJsonBlocks(result.content).forEach((payload) => onFieldUpdates?.(payload));
+      extractJsonPayloads(result.content).forEach((payload) => onFieldUpdates?.(payload));
       setMessages((current) => [
         ...current,
         {

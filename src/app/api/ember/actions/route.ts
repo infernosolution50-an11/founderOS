@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
 import { isUuid, jsonError, readJsonObject, stringValue } from "@/lib/api/validation";
+import { extractJsonPayloads, normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
 import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
 import { buildOpportunityContext } from "@/lib/openai/context";
 import { autofillPrompt } from "@/lib/openai/agents/autofill";
@@ -76,19 +77,19 @@ export async function POST(request: Request) {
 
     const payload = await upstream.json();
     const text = extractText(payload);
-    try {
-      const fill = JSON.parse(text);
-      await supabase.from("ember_messages").insert({
-        opportunity_id: opportunityId,
-        user_id: user.id,
-        role: "assistant",
-        content: `I filled a starting point for the ${section} section. Review every field before relying on it.`,
-        agent_type: "core"
-      });
-      return NextResponse.json({ fill });
-    } catch {
+    const [fill] = extractJsonPayloads(text);
+    if (!fill) {
+      console.error("Ember returned invalid section JSON", text);
       return NextResponse.json({ error: "Ember returned invalid section JSON." }, { status: 502 });
     }
+    await supabase.from("ember_messages").insert({
+      opportunity_id: opportunityId,
+      user_id: user.id,
+      role: "assistant",
+      content: `I filled a starting point for the ${section} section. Review every field before relying on it.`,
+      agent_type: "core"
+    });
+    return NextResponse.json({ fill: normalizeEmberFieldPatch(fill) });
   }
 
   const actionTasks = [

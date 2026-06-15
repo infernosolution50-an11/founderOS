@@ -8,7 +8,7 @@ import { toast } from "@/components/ui/toast";
 import { FieldLabel } from "@/components/ui/Tooltip";
 import { fieldTooltips } from "@/lib/fieldTooltips";
 
-export function NotesTab({ opportunity, notes, documents, isReadOnly, onNotesChange, onAgentAction, onFillSection, onDocumentsChanged }: WhiteboardTabProps) {
+export function NotesTab({ opportunity, notes, documents, isReadOnly, onNotesChange, onAgentAction, onFillSection, onFieldUpdates, onDocumentsChanged }: WhiteboardTabProps) {
   async function downloadDocument(id: string) {
     const response = await fetch(`/api/documents/${id}`);
     const payload = await response.json().catch(() => null);
@@ -103,7 +103,7 @@ export function NotesTab({ opportunity, notes, documents, isReadOnly, onNotesCha
         Synthesize
       </button>
 
-      <DocUpload opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => onDocumentsChanged?.()} />
+      <DocUpload opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => onDocumentsChanged?.()} onFieldUpdates={onFieldUpdates} />
 
       <section className="rounded-2xl border border-os-border bg-os-surface p-4">
         <h2 className="font-display text-lg font-semibold text-os-text">Uploaded documents</h2>

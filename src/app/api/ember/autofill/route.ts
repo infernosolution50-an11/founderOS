@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { jsonError, readJsonObject, stringValue } from "@/lib/api/validation";
+import { extractJsonPayloads, normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
 import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
 import { autofillPrompt } from "@/lib/openai/agents/autofill";
 
@@ -62,10 +63,11 @@ export async function POST(request: Request) {
 
   const payload = await upstream.json();
   const text = extractText(payload);
-  try {
-    return NextResponse.json({ autofill: JSON.parse(text) });
-  } catch {
+  const [autofill] = extractJsonPayloads(text);
+  if (!autofill) {
+    console.error("Ember returned invalid autofill JSON", text);
     return NextResponse.json({ error: "Ember returned invalid autofill JSON." }, { status: 502 });
   }
+  return NextResponse.json({ autofill: normalizeEmberFieldPatch(autofill) });
 }
 
