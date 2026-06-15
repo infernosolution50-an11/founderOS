@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Loader2, MessageCircle, Upload } from "lucide-react";
+import { ArrowLeft, Check, Loader2, MessageCircle, PanelRightOpen, Upload } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { DocUpload } from "@/components/whiteboard/DocUpload";
 import { EmberPanel } from "@/components/whiteboard/EmberPanel";
@@ -13,17 +13,19 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { ExecuteTab } from "@/components/whiteboard/tabs/ExecuteTab";
+import { FitTab } from "@/components/whiteboard/tabs/FitTab";
 import { MarketTab } from "@/components/whiteboard/tabs/MarketTab";
 import { MoatTab } from "@/components/whiteboard/tabs/MoatTab";
 import { NotesTab } from "@/components/whiteboard/tabs/NotesTab";
 import { ResearchTab } from "@/components/whiteboard/tabs/ResearchTab";
 import { RisksTab } from "@/components/whiteboard/tabs/RisksTab";
+import { SignalTab } from "@/components/whiteboard/tabs/SignalTab";
 import { useCreateOpportunity, useOpportunity, useUpdateOpportunity } from "@/hooks/useOpportunity";
 import { calculateOpportunityScore } from "@/lib/score";
 import { cn } from "@/lib/utils";
-import type { AgentType, Opportunity, OpportunityNotes, RiskAssessment } from "@/types";
+import type { AgentType, Milestone, Opportunity, OpportunityNotes, RiskAssessment } from "@/types";
 
-const tabs = ["Research", "Market", "Moat", "Risks", "Execute", "Notes"] as const;
+const tabs = ["Research", "Market", "Moat", "Risks", "Execute", "Notes", "Fit", "Signal"] as const;
 type Tab = (typeof tabs)[number];
 type MobilePanel = "whiteboard" | "ember" | "docs";
 
@@ -33,7 +35,9 @@ const tabAgent: Record<Tab, AgentType> = {
   Moat: "moat",
   Risks: "risk",
   Execute: "execution",
-  Notes: "core"
+  Notes: "core",
+  Fit: "core",
+  Signal: "market"
 };
 
 function emptyNotes(opportunity: Opportunity): OpportunityNotes {
@@ -46,6 +50,7 @@ function emptyNotes(opportunity: Opportunity): OpportunityNotes {
     open_questions: "",
     kill_conditions: "",
     moat_insight: "",
+    decision_log: [],
     updated_at: new Date().toISOString()
   };
 }
@@ -59,8 +64,12 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
   const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [notes, setNotes] = useState<OpportunityNotes | null>(null);
   const [risks, setRisks] = useState<RiskAssessment[]>([]);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [quickAction, setQuickAction] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("whiteboard");
+  const [isEmberCollapsed, setIsEmberCollapsed] = useState(false);
+  const [autofillIdea, setAutofillIdea] = useState("");
+  const [isAutofilling, setIsAutofilling] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const [dirtyVersion, setDirtyVersion] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,9 +83,30 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     setOpportunity(data.opportunity);
     setNotes(data.notes ?? emptyNotes(data.opportunity));
     setRisks(data.risks);
+    setMilestones(data.milestones);
     didHydrate.current = true;
     setSaveStatus("saved");
   }, [data]);
+
+  useEffect(() => {
+    const value = window.localStorage.getItem(`founderos:ember-collapsed:${opportunityId}`);
+    setIsEmberCollapsed(value === "true");
+  }, [opportunityId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(`founderos:ember-collapsed:${opportunityId}`, String(isEmberCollapsed));
+  }, [isEmberCollapsed, opportunityId]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        setIsEmberCollapsed((value) => !value);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   function markDirty() {
     changeVersion.current += 1;
@@ -85,8 +115,8 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
 
   const score = useMemo(() => {
     if (!opportunity) return 0;
-    return calculateOpportunityScore(opportunity, risks, data?.tasks ?? []);
-  }, [opportunity, risks, data?.tasks]);
+    return calculateOpportunityScore(opportunity, risks, data?.tasks ?? [], milestones);
+  }, [opportunity, risks, data?.tasks, milestones]);
 
   useEffect(() => {
     if (!didHydrate.current || !opportunity || !notes) return;
@@ -105,7 +135,8 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
           ...opportunity,
           opportunity_score: score,
           notes,
-          risks
+          risks,
+          milestones
         });
         savedVersion.current = Math.max(savedVersion.current, versionToSave);
         setSaveStatus(changeVersion.current === versionToSave ? "saved" : "saving");
@@ -121,7 +152,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [dirtyVersion, notes, opportunity, risks, saveOpportunity, score]);
+  }, [dirtyVersion, milestones, notes, opportunity, risks, saveOpportunity, score]);
 
   if (isLoading) {
     return (
@@ -152,10 +183,105 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     }
   }
 
+  function applyEmberPatch(payload: unknown) {
+    if (!opportunity) return;
+    if (!payload || typeof payload !== "object") return;
+    const patch = payload as Record<string, unknown>;
+    const fields = (patch.fields && typeof patch.fields === "object" ? patch.fields : patch) as Record<string, unknown>;
+    let updated = 0;
+
+    function unwrapValues(section: unknown) {
+      if (!section || typeof section !== "object" || Array.isArray(section)) return {};
+      return Object.fromEntries(
+        Object.entries(section as Record<string, unknown>).map(([key, value]) => [
+          key,
+          value && typeof value === "object" && "value" in value ? (value as { value: unknown }).value : value
+        ])
+      );
+    }
+
+    const opportunityPatch = unwrapValues(fields.opportunity);
+    if (Object.keys(opportunityPatch).length > 0) {
+      markDirty();
+      setOpportunity((current) => (current ? { ...current, ...opportunityPatch } : current));
+      updated += Object.keys(opportunityPatch).length;
+    }
+
+    const notesPatch = unwrapValues(fields.notes);
+    if (Object.keys(notesPatch).length > 0) {
+      markDirty();
+      setNotes((current) => (current ? { ...current, ...notesPatch } : current));
+      updated += Object.keys(notesPatch).length;
+    }
+
+    if (Array.isArray(fields.risks)) {
+      markDirty();
+      setRisks(fields.risks as RiskAssessment[]);
+      updated += fields.risks.length;
+    }
+
+    if (Array.isArray(fields.milestones)) {
+      markDirty();
+      setMilestones(
+        (fields.milestones as Array<Partial<Milestone>>).map((milestone) => ({
+          id: milestone.id ?? crypto.randomUUID(),
+          opportunity_id: opportunity.id,
+          user_id: opportunity.user_id,
+          title: milestone.title ?? "Untitled milestone",
+          target_date: milestone.target_date ?? null,
+          done: Boolean(milestone.done),
+          created_at: milestone.created_at ?? new Date().toISOString()
+        }))
+      );
+      updated += fields.milestones.length;
+    }
+
+    if (updated > 0) {
+      toast.success(`Ember updated ${updated} fields — review and adjust.`);
+    }
+  }
+
+  async function fillSection(section: string) {
+    if (isReadOnly || !opportunity) return;
+    try {
+      const response = await fetch("/api/ember/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opportunity.id, action: "fill_section", section })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error ?? "Could not fill this section.");
+      applyEmberPatch(payload.fill);
+    } catch (fillError) {
+      toast.error(fillError instanceof Error ? fillError.message : "Could not fill this section.");
+    }
+  }
+
+  async function runAutofill() {
+    if (!autofillIdea.trim() || isReadOnly || !opportunity) return;
+    setIsAutofilling(true);
+    try {
+      const response = await fetch("/api/ember/autofill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityName: opportunity.name, idea: autofillIdea })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error ?? "Could not autofill this opportunity.");
+      applyEmberPatch(payload.autofill);
+      setAutofillIdea("");
+    } catch (autofillError) {
+      toast.error(autofillError instanceof Error ? autofillError.message : "Could not autofill this opportunity.");
+    } finally {
+      setIsAutofilling(false);
+    }
+  }
+
   const tabProps = {
     opportunity: { ...opportunity, opportunity_score: score },
     notes,
     risks,
+    milestones,
     tasks: data.tasks,
     documents: data.documents,
     isReadOnly,
@@ -177,9 +303,16 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
         setRisks(nextRisks);
       }
     },
+    onMilestonesChange: (nextMilestones: Milestone[]) => {
+      if (!isReadOnly) {
+        markDirty();
+        setMilestones(nextMilestones);
+      }
+    },
     onAgentAction: (message: string) => {
       if (!isReadOnly) setQuickAction(message);
     },
+    onFillSection: fillSection,
     onDocumentsChanged: async () => {
       await refetch();
     }
@@ -197,6 +330,8 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
       {activeTab === "Risks" && <RisksTab {...tabProps} />}
       {activeTab === "Execute" && <ExecuteTab {...tabProps} />}
       {activeTab === "Notes" && <NotesTab {...tabProps} />}
+      {activeTab === "Fit" && <FitTab {...tabProps} />}
+      {activeTab === "Signal" && <SignalTab {...tabProps} />}
     </div>
   );
 
@@ -209,6 +344,8 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
       quickAction={quickAction}
       onQuickActionHandled={() => setQuickAction(null)}
       readOnly={isReadOnly}
+      onFieldUpdates={applyEmberPatch}
+      onCollapse={() => setIsEmberCollapsed(true)}
       onRefresh={async () => {
         await refetch();
       }}
@@ -273,7 +410,7 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
         ))}
       </div>
 
-      <main className="min-h-[calc(100vh-77px)] lg:grid lg:grid-cols-[52fr_48fr]">
+      <main className={cn("min-h-[calc(100vh-77px)] transition-all duration-300 lg:grid", isEmberCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-[52fr_48fr]")}>
         <section className={cn("border-r border-os-border p-4 md:p-5", mobilePanel !== "whiteboard" && "hidden lg:block")}>
           <Tabs items={tabs.map((tab) => ({ value: tab, label: tab }))} value={activeTab} onChange={setActiveTab} className="mb-5" />
           {isReadOnly && (
@@ -292,14 +429,43 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
               </Button>
             </div>
           )}
+          {!isReadOnly && (
+            <div className="mb-5 rounded-os-md border border-os-border bg-os-surface p-4">
+              <p className="font-display text-sm font-semibold text-os-text">Let Ember fill this</p>
+              <p className="mt-1 text-os-sm text-os-sub">Describe your idea in 1-3 sentences and Ember will fill in a starting point for every field.</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
+                <input
+                  value={autofillIdea}
+                  onChange={(event) => setAutofillIdea(event.target.value)}
+                  placeholder="Example: AI copilot that helps finance teams approve SaaS purchases in Slack..."
+                  className="rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
+                />
+                <Button type="button" variant="primary" size="md" loading={isAutofilling} disabled={!autofillIdea.trim() || isAutofilling} onClick={runAutofill}>
+                  Let Ember fill this
+                </Button>
+              </div>
+            </div>
+          )}
           {activeTabContent}
         </section>
 
-        <div className={cn(mobilePanel !== "ember" && "hidden lg:block")}>{emberPanel}</div>
+        <div className={cn(mobilePanel !== "ember" && "hidden lg:block", isEmberCollapsed && "lg:hidden")}>{emberPanel}</div>
         <section className={cn("p-4 md:p-5 lg:hidden", mobilePanel !== "docs" && "hidden")}>
           <DocUpload opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} />
         </section>
       </main>
+      {isEmberCollapsed && (
+        <Button
+          type="button"
+          variant="primary"
+          size="md"
+          className="fixed bottom-5 right-5 z-30 hidden rounded-full shadow-os-lg lg:inline-flex"
+          onClick={() => setIsEmberCollapsed(false)}
+          leftIcon={<PanelRightOpen className="h-4 w-4" aria-hidden="true" />}
+        >
+          Open Ember
+        </Button>
+      )}
     </div>
   );
 }

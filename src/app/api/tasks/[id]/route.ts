@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
 import { isUuid, jsonError, nullableDateValue, phaseValue, priorityValue, readJsonObject, stringValue, taskCategoryValue } from "@/lib/api/validation";
+import { recalculateOpportunityScore } from "@/lib/api/recalculateScore";
 
 type Params = {
   params: {
@@ -47,6 +48,8 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  await recalculateOpportunityScore(supabase as any, data.opportunity_id, user.id);
+
   return NextResponse.json({ task: data });
 }
 
@@ -58,10 +61,15 @@ export async function DELETE(_request: Request, { params }: Params) {
   const { supabase, user, response } = await requireUser();
   if (response) return response;
 
+  const { data: task } = await supabase.from("tasks").select("opportunity_id").eq("id", params.id).eq("user_id", user.id).single();
   const { error } = await supabase.from("tasks").delete().eq("id", params.id).eq("user_id", user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (task?.opportunity_id) {
+    await recalculateOpportunityScore(supabase as any, task.opportunity_id, user.id);
   }
 
   return NextResponse.json({ ok: true });

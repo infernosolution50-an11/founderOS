@@ -1,6 +1,7 @@
 import type {
   DocumentRecord,
   EmberMessage,
+  Milestone,
   Opportunity,
   OpportunityNotes,
   RiskAssessment,
@@ -88,6 +89,15 @@ export type Database = {
           risk_label: string;
         };
         Update: Update<RiskAssessment>;
+      };
+      milestones: {
+        Row: Milestone;
+        Insert: Partial<Insert<Milestone, "id" | "created_at">> & {
+          opportunity_id: string;
+          user_id: string;
+          title: string;
+        };
+        Update: Update<Milestone>;
       };
     };
     Views: Record<string, never>;

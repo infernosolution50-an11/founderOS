@@ -29,11 +29,12 @@ export async function POST(request: Request) {
 
   const sourceDemoId = body.sourceDemoId;
   if (isUuid(sourceDemoId)) {
-    const [{ data: source, error: sourceError }, notes, tasks, risks, messages] = await Promise.all([
+    const [{ data: source, error: sourceError }, notes, tasks, risks, milestones, messages] = await Promise.all([
       supabase.from("opportunities").select("*").eq("id", sourceDemoId).eq("is_demo", true).single(),
       supabase.from("opportunity_notes").select("*").eq("opportunity_id", sourceDemoId).maybeSingle(),
       supabase.from("tasks").select("*").eq("opportunity_id", sourceDemoId).order("created_at"),
       supabase.from("risk_assessments").select("*").eq("opportunity_id", sourceDemoId).order("created_at"),
+      supabase.from("milestones").select("*").eq("opportunity_id", sourceDemoId).order("created_at"),
       supabase.from("ember_messages").select("*").eq("opportunity_id", sourceDemoId).order("created_at")
     ]);
 
@@ -90,6 +91,17 @@ export async function POST(request: Request) {
       if (riskResult.error) console.error("Failed to clone demo risks", riskResult.error);
     }
 
+    if ((milestones.data ?? []).length > 0) {
+      const milestoneResult = await supabase.from("milestones").insert(
+        (milestones.data ?? []).map(({ id: _id, user_id: _userId, opportunity_id: _opportunityId, created_at: _createdAt, ...milestone }) => ({
+          ...milestone,
+          opportunity_id: opportunity.id,
+          user_id: user.id
+        }))
+      );
+      if (milestoneResult.error) console.error("Failed to clone demo milestones", milestoneResult.error);
+    }
+
     const starterMessages = (messages.data ?? []).slice(0, 4);
     if (starterMessages.length > 0) {
       const messageResult = await supabase.from("ember_messages").insert(
@@ -110,24 +122,31 @@ export async function POST(request: Request) {
   const opportunitySeed = isExample
     ? {
         name: "AI procurement copilot for mid-market finance teams",
+        problem_statement: "Finance teams lose budget control because procurement requests start in Slack, email, and spreadsheets before approval context exists.",
+        target_customer_persona: "CFOs, controllers, and procurement leads at 200-1,000 person companies with SaaS sprawl.",
         urgency: 8,
         pain: 8,
         frequency: 7,
         willingness_to_pay: 8,
+        customer_discovery_count: 14,
+        key_insight: "Procurement pain starts before the formal procurement suite.",
+        falsifiable_hypothesis: "If finance leaders will not commit to paid pilots, the wedge is too weak.",
         domain_expertise: 4,
         network_access: 4,
         unfair_insight: 5,
         timing_signals: ["New technology", "Behavior shift"],
+        market_type: "existing_market",
         business_model: "Vertical SaaS",
+        pricing_model: "Monthly SaaS plus implementation for design partners",
         acv: "$18k/year",
         tam_m: 2200,
         sam_m: 360,
         som_m: 42,
         growth_rate_pct: 32,
         competitors: [
-          { name: "Zip", threat: "high" },
-          { name: "Coupa", threat: "medium" },
-          { name: "Manual spreadsheet workflow", threat: "high" }
+          { name: "Zip", threat: "high", differentiator: "Slack-native intake before formal procurement", estimated_arr: "$100M+" },
+          { name: "Coupa", threat: "medium", differentiator: "Lower implementation burden for mid-market teams", estimated_arr: "$1B+" },
+          { name: "Manual spreadsheet workflow", threat: "high", differentiator: "Automated routing and budget context", estimated_arr: "Internal workflow" }
         ],
         moat_network: 5,
         moat_data: 7,
@@ -135,11 +154,26 @@ export async function POST(request: Request) {
         moat_scale: 4,
         moat_brand: 3,
         moat_ip: 2,
+        moat_summary: "The long-term moat is proprietary approval, vendor-risk, and budget workflow data accumulated across finance teams.",
+        time_to_copy: "1_year",
         phase: "0→1",
         kpi_primary: "10 finance leader discovery calls",
         kpi_revenue: "3 paid pilots at $1.5k/month",
         kpi_learning: "Validate whether procurement intake is owned by finance or ops",
+        sprint_goal_90_day: "Convert three finance teams into paid Slack-native procurement pilots.",
+        runway_months: 9,
+        next_fundraise_trigger: "Three paid pilots with weekly active finance users.",
         conviction_stars: 4,
+        prior_startup_experience: "none",
+        co_founder_status: "co_founder_found",
+        capital_access: "seeking_seed",
+        founder_statement: "We have direct finance-ops experience and access to CFO design partners.",
+        lois_verbal_commitments: 4,
+        waitlist_signups: 37,
+        pilot_customers: 2,
+        revenue_to_date: 3000,
+        last_customer_conversation_date: new Date().toISOString().slice(0, 10),
+        signal_notes: "Two CFOs asked for paid pilots if the Slack workflow integrates with approval data.",
         opportunity_score: 72
       }
     : {
@@ -195,7 +229,14 @@ export async function POST(request: Request) {
           kill_conditions:
             "Kill this if buyers refuse paid pilots, if the workflow owner is too fragmented, or if incumbents already solve intake well enough.",
           moat_insight:
-            "The strongest defensibility angle is proprietary approval and vendor-risk data collected across repeated procurement workflows."
+            "The strongest defensibility angle is proprietary approval and vendor-risk data collected across repeated procurement workflows.",
+          decision_log: [
+            {
+              id: crypto.randomUUID(),
+              body: "Started with finance-owned procurement intake as the narrow wedge.",
+              created_at: new Date().toISOString()
+            }
+          ]
         }
       : {})
   });
@@ -253,20 +294,52 @@ export async function POST(request: Request) {
         user_id: user.id,
         risk_label: "Incumbents bundle the workflow",
         heat_level: "high",
-        mitigation_note: "Find a narrow wedge legacy suites ignore."
+        category: "market",
+        likelihood: "high",
+        impact: "high",
+        mitigation_note: "Find a narrow wedge legacy suites ignore.",
+        owner: "Founder",
+        status: "open"
       },
       {
         opportunity_id: data.id,
         user_id: user.id,
         risk_label: "Owner is unclear",
         heat_level: "medium",
-        mitigation_note: "Force every discovery call to name the daily workflow owner."
+        category: "team",
+        likelihood: "high",
+        impact: "low",
+        mitigation_note: "Force every discovery call to name the daily workflow owner.",
+        owner: "Founder",
+        status: "in_progress"
       }
     ]);
 
     if (risksResult.error) {
       console.error("Failed to create example risks", risksResult.error);
       return jsonError("Example opportunity created, but risks could not be initialized.", 500);
+    }
+
+    const milestonesResult = await supabase.from("milestones").insert([
+      {
+        opportunity_id: data.id,
+        user_id: user.id,
+        title: "Complete 15 CFO discovery calls",
+        target_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        done: false
+      },
+      {
+        opportunity_id: data.id,
+        user_id: user.id,
+        title: "Secure three paid procurement pilots",
+        target_date: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        done: false
+      }
+    ]);
+
+    if (milestonesResult.error) {
+      console.error("Failed to create example milestones", milestonesResult.error);
+      return jsonError("Example opportunity created, but milestones could not be initialized.", 500);
     }
   }
 

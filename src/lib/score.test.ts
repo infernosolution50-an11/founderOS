@@ -48,5 +48,36 @@ describe("calculateOpportunityScore", () => {
 
     expect(withMomentum).toBeGreaterThan(noMomentum);
   });
+
+  it("rewards founder fit and external signal", () => {
+    const weak = calculateOpportunityScore(baseOpportunity);
+    const strong = calculateOpportunityScore({
+      ...baseOpportunity,
+      customer_discovery_count: 20,
+      conviction_stars: 5,
+      prior_startup_experience: "one_exit",
+      co_founder_status: "team_assembled",
+      capital_access: "funded",
+      lois_verbal_commitments: 6,
+      pilot_customers: 2,
+      revenue_to_date: 5000
+    });
+
+    expect(strong).toBeGreaterThan(weak);
+  });
+
+  it("reduces risk penalty when high risks are mitigated", () => {
+    const openRisk = calculateOpportunityScore(baseOpportunity, [{ heat_level: "high", status: "open" }]);
+    const mitigatedRisk = calculateOpportunityScore(baseOpportunity, [{ heat_level: "high", status: "mitigated" }]);
+
+    expect(mitigatedRisk).toBeGreaterThan(openRisk);
+  });
+
+  it("adds milestone completion momentum", () => {
+    const noMilestones = calculateOpportunityScore(baseOpportunity);
+    const withMilestones = calculateOpportunityScore(baseOpportunity, [], [], [{ done: true }, { done: true }]);
+
+    expect(withMilestones).toBeGreaterThan(noMilestones);
+  });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MessageCircle, Send } from "lucide-react";
+import { ChevronRight, MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/components/ui/toast";
@@ -18,6 +18,8 @@ type EmberPanelProps = {
   quickAction: string | null;
   onQuickActionHandled: () => void;
   onRefresh?: () => void | Promise<void>;
+  onFieldUpdates?: (payload: unknown) => void;
+  onCollapse?: () => void;
   readOnly?: boolean;
 };
 
@@ -27,10 +29,26 @@ const quickActions: Record<string, string[]> = {
   Moat: ["Build the moat", "What's my strongest defensibility angle?"],
   Risks: ["Stress-test the thesis", "Find hidden risks"],
   Execute: ["Generate action plan", "What's the highest leverage move this week?"],
-  Notes: ["Synthesize notes", "What am I not asking?"]
+  Notes: ["Synthesize notes", "What am I not asking?"],
+  Fit: ["Pressure-test founder fit", "What edge am I missing?"],
+  Signal: ["Assess validation signal", "What proof is still missing?"]
 };
 
-export function EmberPanel({ opportunityId, initialMessages, activeAgent, activeTab, quickAction, onQuickActionHandled, onRefresh, readOnly }: EmberPanelProps) {
+const emberModelLabel = "gpt-5-mini";
+
+function extractJsonBlocks(content: string) {
+  return [...content.matchAll(/```json\s*([\s\S]*?)```/g)]
+    .map((match) => {
+      try {
+        return JSON.parse(match[1]);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+export function EmberPanel({ opportunityId, initialMessages, activeAgent, activeTab, quickAction, onQuickActionHandled, onRefresh, onFieldUpdates, onCollapse, readOnly }: EmberPanelProps) {
   const [messages, setMessages] = useState<EmberMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
@@ -102,6 +120,7 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
       });
 
       setPreviousResponseId(result.responseId);
+      extractJsonBlocks(result.content).forEach((payload) => onFieldUpdates?.(payload));
       setMessages((current) => [
         ...current,
         {
@@ -119,7 +138,7 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
       toast.error(error instanceof Error ? error.message : "Ember failed to respond");
       setStreamingText("");
     }
-  }, [activeAgent, isStreaming, opportunityId, previousResponseId, readOnly, sendMessage]);
+  }, [activeAgent, isStreaming, onFieldUpdates, opportunityId, previousResponseId, readOnly, sendMessage]);
 
   useEffect(() => {
     if (!quickAction) return;
@@ -140,20 +159,33 @@ export function EmberPanel({ opportunityId, initialMessages, activeAgent, active
             <h2 className="font-display text-2xl font-bold">Ember</h2>
             <p className="text-sm text-os-sub">{agentLabels[activeAgent]}</p>
           </div>
-          <span className="rounded-full border border-os-indigo/40 bg-os-indigo/10 px-3 py-1 text-xs text-os-indigo">
-            {activeTab}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-os-border bg-os-surface px-3 py-1 text-xs text-os-sub">{emberModelLabel}</span>
+            <span className="rounded-full border border-os-indigo/40 bg-os-indigo/10 px-3 py-1 text-xs text-os-indigo">
+              {activeTab}
+            </span>
+            {onCollapse && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Collapse Ember"
+                onClick={onCollapse}
+                leftIcon={<ChevronRight className="h-4 w-4" aria-hidden="true" />}
+              />
+            )}
+          </div>
         </div>
         <div className="scrollbar-thin mt-4 flex gap-2 overflow-x-auto pb-1">
           {(quickActions[activeTab] ?? []).map((action) => (
             <Button
               key={action}
               type="button"
-            onClick={() => submitMessage(action)}
+              onClick={() => submitMessage(action)}
               variant="secondary"
               size="sm"
               className="min-w-max rounded-full"
-            disabled={readOnly}
+              disabled={readOnly}
             >
               {action}
             </Button>

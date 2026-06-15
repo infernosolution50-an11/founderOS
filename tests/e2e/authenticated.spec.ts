@@ -79,8 +79,8 @@ test("private opportunity task workflow works", async ({ page, request }) => {
 
   const taskText = `${e2ePrefix} validate task`;
   await page.getByPlaceholder("Add task").fill(taskText);
-  await page.locator('input[type="date"]').fill("2026-06-30");
-  await page.getByRole("button", { name: "Add" }).click();
+  await page.locator('input[type="date"]').first().fill("2026-06-30");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByText(taskText)).toBeVisible();
   await expect(page.getByText("6/30/2026")).toBeVisible();
 
@@ -91,6 +91,28 @@ test("private opportunity task workflow works", async ({ page, request }) => {
   await page.getByText(taskText).locator("xpath=ancestor::div[contains(@class, 'relative')][1]").getByRole("button", { name: "Delete" }).click();
   await removed;
   await expect(page.getByText(taskText)).toBeHidden();
+
+  await deleteOpportunity(request, opportunity.id);
+});
+
+test("expanded tabs and collapsible Ember render for private opportunities", async ({ page, request }) => {
+  const opportunity = await createOpportunity(request, `${e2ePrefix} expanded ${Date.now()}`);
+  await page.goto(`/opportunity/${opportunity.id}`);
+
+  await expect(page.getByRole("tab", { name: "Fit" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Signal" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Let Ember fill this" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Fit" }).click();
+  await expect(page.getByRole("heading", { name: "Founder Fit" })).toBeVisible();
+  await expect(page.getByText("Founder statement")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Signal" }).click();
+  await expect(page.getByRole("heading", { name: "Signal" })).toBeVisible();
+  await expect(page.getByText(/No signal|Early signal|Strong signal|Traction/).first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Collapse Ember" }).click();
+  await expect(page.getByRole("button", { name: /open ember/i })).toBeVisible();
 
   await deleteOpportunity(request, opportunity.id);
 });

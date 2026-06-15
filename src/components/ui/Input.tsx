@@ -1,14 +1,16 @@
 import { InputHTMLAttributes, ReactNode, useId } from "react";
 import { cn } from "@/lib/utils";
+import { FieldLabel } from "@/components/ui/Tooltip";
 
 type InputProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
+  tooltip?: ReactNode;
   error?: string;
   helperText?: string;
   rightSlot?: ReactNode;
 };
 
-export function Input({ className, id, label, error, helperText, rightSlot, ...props }: InputProps) {
+export function Input({ className, id, label, tooltip, error, helperText, rightSlot, ...props }: InputProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const messageId = `${inputId}-message`;
@@ -16,7 +18,7 @@ export function Input({ className, id, label, error, helperText, rightSlot, ...p
   return (
     <div className="grid gap-1.5">
       <label htmlFor={inputId} className="font-display text-os-xs font-medium uppercase tracking-[0.16em] text-os-sub">
-        {label}
+        <FieldLabel label={label} tooltip={tooltip} />
       </label>
       <div className="relative">
         <input

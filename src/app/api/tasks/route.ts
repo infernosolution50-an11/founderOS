@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
 import { isUuid, jsonError, nullableDateValue, phaseValue, priorityValue, readJsonObject, stringValue, taskCategoryValue } from "@/lib/api/validation";
+import { recalculateOpportunityScore } from "@/lib/api/recalculateScore";
 
 export async function GET(request: Request) {
   const { supabase, user, response } = await requireUser();
@@ -72,6 +73,8 @@ export async function POST(request: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  await recalculateOpportunityScore(supabase as any, opportunityId, user.id);
 
   return NextResponse.json({ task: data }, { status: 201 });
 }

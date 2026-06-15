@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DocumentRecord, EmberMessage, Opportunity, OpportunityNotes, RiskAssessment, Task } from "@/types";
+import type { DocumentRecord, EmberMessage, Milestone, Opportunity, OpportunityNotes, RiskAssessment, Task } from "@/types";
 
 export type OpportunityBundle = {
   opportunity: Opportunity;
   notes: OpportunityNotes | null;
   risks: RiskAssessment[];
   tasks: Task[];
+  milestones: Milestone[];
   documents: DocumentRecord[];
   messages: EmberMessage[];
 };
