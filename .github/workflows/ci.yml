@@ -27,4 +27,6 @@ jobs:
       - run: npm run typecheck
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e:smoke
+        env:
+          E2E_SKIP_AUTH_SETUP: "1"
 

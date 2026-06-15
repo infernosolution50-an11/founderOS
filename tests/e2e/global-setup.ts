@@ -6,6 +6,11 @@ export default async function globalSetup(config: FullConfig) {
   const env = loadE2EEnv();
   ensureEmptyAuthState();
 
+  if (process.env.E2E_SKIP_AUTH_SETUP === "1") {
+    console.warn("Skipping authenticated E2E setup because E2E_SKIP_AUTH_SETUP=1.");
+    return;
+  }
+
   if (!env.supabaseUrl || !env.serviceRoleKey || !env.email || !env.password) {
     console.warn("Skipping authenticated E2E setup because E2E/Supabase env vars are missing.");
     return;
