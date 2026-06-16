@@ -54,12 +54,20 @@ test("shared demo can be copied to a private editable workspace", async ({ page,
 });
 
 test("private opportunity can be created, edited, reloaded, and deleted", async ({ page, request }) => {
+  test.setTimeout(60_000);
   await openDashboard(page);
   await page.getByRole("button", { name: /^create opportunity$/i }).click();
+  const intakeName = `${e2ePrefix} intake ${Date.now()}`;
+  await page.getByLabel("Opportunity name").fill(intakeName);
+  await page.getByLabel("Describe the idea in 1-3 sentences").fill("AI workflow that helps finance teams approve SaaS purchases from Slack with budget context and faster vendor review.");
+  await page.getByRole("button", { name: /let ember build it/i }).click();
   await page.waitForURL(/\/opportunity\//);
 
   const opportunityId = page.url().split("/opportunity/")[1]?.split(/[?#]/)[0];
   expect(opportunityId).toBeTruthy();
+  await expect(page.getByLabel("Opportunity name")).toHaveValue(intakeName);
+  await expect(page.getByText("Problem statement").locator("xpath=ancestor::label[1]").locator("textarea")).not.toHaveValue("");
+  await expect(page.locator('input[type="range"]').first()).not.toHaveValue("5");
 
   const updatedName = `${e2ePrefix} autosave ${Date.now()}`;
   const saved = page.waitForResponse((response) => response.url().includes(`/api/opportunities/${opportunityId}`) && response.request().method() === "PATCH" && response.ok());
@@ -75,7 +83,7 @@ test("private opportunity can be created, edited, reloaded, and deleted", async 
 test("private opportunity task workflow works", async ({ page, request }) => {
   const opportunity = await createOpportunity(request, `${e2ePrefix} tasks ${Date.now()}`);
   await page.goto(`/opportunity/${opportunity.id}`);
-  await page.getByRole("tab", { name: "Execute" }).click();
+  await page.getByRole("tab", { name: "Build" }).click();
 
   const taskText = `${e2ePrefix} validate task`;
   await page.getByPlaceholder("Add task").fill(taskText);
@@ -95,24 +103,32 @@ test("private opportunity task workflow works", async ({ page, request }) => {
   await deleteOpportunity(request, opportunity.id);
 });
 
-test("expanded tabs and collapsible Ember render for private opportunities", async ({ page, request }) => {
+test("five tabs, Ask Ember, and Notes drawer render for private opportunities", async ({ page, request }) => {
   const opportunity = await createOpportunity(request, `${e2ePrefix} expanded ${Date.now()}`);
   await page.goto(`/opportunity/${opportunity.id}`);
 
-  await expect(page.getByRole("tab", { name: "Fit" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Discover" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Build" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Signal" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Let Ember fill this" })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Fit" }).click();
-  await expect(page.getByRole("heading", { name: "Founder Fit" })).toBeVisible();
+  await page.getByRole("tab", { name: "Discover" }).click();
+  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
   await expect(page.getByText("Founder statement")).toBeVisible();
 
   await page.getByRole("tab", { name: "Signal" }).click();
   await expect(page.getByRole("heading", { name: "Signal" })).toBeVisible();
   await expect(page.getByText(/No signal|Early signal|Strong signal|Traction/).first()).toBeVisible();
 
+  await expect(page.getByRole("heading", { name: "Ember" })).toBeHidden();
+  await page.getByRole("button", { name: "Ask Ember", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Ember" })).toBeVisible();
   await page.getByRole("button", { name: "Collapse Ember" }).click();
-  await expect(page.getByRole("button", { name: /open ember/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ember" })).toBeHidden();
+
+  await page.getByRole("button", { name: "Notes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+  await expect(page.getByText("Decision log")).toBeVisible();
 
   await deleteOpportunity(request, opportunity.id);
 });

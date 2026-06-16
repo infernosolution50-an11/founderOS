@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Priority, Task, TaskCategory } from "@/types";
 
 type TasksCache = { tasks: Task[] };
+type OpportunityTasksCache = { tasks: Task[] };
 
 export function useTasks(opportunityId: string) {
   return useQuery({
@@ -31,23 +32,28 @@ export function useCreateTask(opportunityId: string) {
     onMutate: async (task) => {
       await queryClient.cancelQueries({ queryKey: ["tasks", opportunityId] });
       const previous = queryClient.getQueryData<TasksCache>(["tasks", opportunityId]);
-      const optimisticTask: Task = {
-        id: `optimistic-${Date.now()}`,
-        opportunity_id: opportunityId,
-        user_id: "",
-        text: task.text,
-        category: task.category,
-        phase: (task.phase as Task["phase"]) || "0→1",
-        done: false,
-        priority: task.priority ?? "medium",
-        due_date: task.due_date ?? null,
-        created_at: new Date().toISOString()
+      const previousOpportunity = queryClient.getQueryData<OpportunityTasksCache>(["opportunity", opportunityId]);
+      return { previous, previousOpportunity };
+    },
+    onSuccess: (result: { task?: Task }) => {
+      if (!result.task) return;
+      const upsertTask = (tasks: Task[]) => {
+        const exists = tasks.some((task) => task.id === result.task!.id);
+        return exists ? tasks.map((task) => (task.id === result.task!.id ? result.task! : task)) : [...tasks, result.task!];
       };
-      queryClient.setQueryData<TasksCache>(["tasks", opportunityId], { tasks: [...(previous?.tasks ?? []), optimisticTask] });
-      return { previous };
+      const current = queryClient.getQueryData<TasksCache>(["tasks", opportunityId]);
+      if (current) queryClient.setQueryData<TasksCache>(["tasks", opportunityId], { tasks: upsertTask(current.tasks) });
+      const currentOpportunity = queryClient.getQueryData<OpportunityTasksCache>(["opportunity", opportunityId]);
+      if (currentOpportunity) {
+        queryClient.setQueryData<OpportunityTasksCache>(["opportunity", opportunityId], {
+          ...currentOpportunity,
+          tasks: upsertTask(currentOpportunity.tasks ?? [])
+        });
+      }
     },
     onError: (_error, _task, context) => {
       if (context?.previous) queryClient.setQueryData(["tasks", opportunityId], context.previous);
+      if (context?.previousOpportunity) queryClient.setQueryData(["opportunity", opportunityId], context.previousOpportunity);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", opportunityId] });
@@ -72,13 +78,21 @@ export function useUpdateTask(opportunityId: string) {
     onMutate: async ({ id, patch }) => {
       await queryClient.cancelQueries({ queryKey: ["tasks", opportunityId] });
       const previous = queryClient.getQueryData<TasksCache>(["tasks", opportunityId]);
+      const previousOpportunity = queryClient.getQueryData<OpportunityTasksCache>(["opportunity", opportunityId]);
       queryClient.setQueryData<TasksCache>(["tasks", opportunityId], {
         tasks: (previous?.tasks ?? []).map((task) => (task.id === id ? { ...task, ...patch } : task))
       });
-      return { previous };
+      if (previousOpportunity) {
+        queryClient.setQueryData<OpportunityTasksCache>(["opportunity", opportunityId], {
+          ...previousOpportunity,
+          tasks: (previousOpportunity.tasks ?? []).map((task) => (task.id === id ? { ...task, ...patch } : task))
+        });
+      }
+      return { previous, previousOpportunity };
     },
     onError: (_error, _variables, context) => {
       if (context?.previous) queryClient.setQueryData(["tasks", opportunityId], context.previous);
+      if (context?.previousOpportunity) queryClient.setQueryData(["opportunity", opportunityId], context.previousOpportunity);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", opportunityId] });
@@ -98,13 +112,21 @@ export function useDeleteTask(opportunityId: string) {
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["tasks", opportunityId] });
       const previous = queryClient.getQueryData<TasksCache>(["tasks", opportunityId]);
+      const previousOpportunity = queryClient.getQueryData<OpportunityTasksCache>(["opportunity", opportunityId]);
       queryClient.setQueryData<TasksCache>(["tasks", opportunityId], {
         tasks: (previous?.tasks ?? []).filter((task) => task.id !== id)
       });
-      return { previous };
+      if (previousOpportunity) {
+        queryClient.setQueryData<OpportunityTasksCache>(["opportunity", opportunityId], {
+          ...previousOpportunity,
+          tasks: (previousOpportunity.tasks ?? []).filter((task) => task.id !== id)
+        });
+      }
+      return { previous, previousOpportunity };
     },
     onError: (_error, _id, context) => {
       if (context?.previous) queryClient.setQueryData(["tasks", opportunityId], context.previous);
+      if (context?.previousOpportunity) queryClient.setQueryData(["opportunity", opportunityId], context.previousOpportunity);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", opportunityId] });

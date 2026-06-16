@@ -15,7 +15,7 @@ const capabilities = [
   },
   {
     title: "Download or delete",
-    description: "Document rows and storage objects are owned by your account and can be downloaded or removed from the Notes tab.",
+    description: "Document rows and storage objects are owned by your account and can be downloaded or removed from the Notes drawer.",
     icon: Download
   },
   {
@@ -32,7 +32,7 @@ export default function DocsPage() {
         <p className="font-display text-os-xs font-semibold uppercase tracking-[0.24em] text-os-indigo">Documents</p>
         <h1 className="mt-3 font-display text-3xl font-bold text-os-text">Docs Workflow</h1>
         <p className="mt-2 max-w-2xl text-os-sm text-os-sub">
-          Upload pitch decks, research notes, customer call writeups, or specs from an opportunity’s Notes tab. Ember uses those documents as evidence for sharper synthesis.
+          Upload pitch decks, research notes, customer call writeups, or specs from an opportunity’s Notes drawer. Ember uses those documents as evidence for sharper synthesis.
         </p>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2">

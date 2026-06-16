@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
 import { isUuid, jsonError, readJsonObject, stringValue } from "@/lib/api/validation";
-import { extractJsonPayloads, normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
+import { emberSectionFields, extractJsonPayloads, filterPatchForSection, normalizeEmberFieldPatch, normalizeEmberSection } from "@/lib/ember/fieldUpdates";
 import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
 import { buildOpportunityContext } from "@/lib/openai/context";
-import { autofillPrompt } from "@/lib/openai/agents/autofill";
+import { sectionFillPrompt } from "@/lib/openai/agents/autofill";
+import type { Opportunity } from "@/types";
 
 type ResponseContent = { text?: string };
 type ResponseOutput = { content?: ResponseContent[] };
@@ -19,6 +20,23 @@ function extractText(payload: { output_text?: unknown; output?: ResponseOutput[]
     .join("");
 }
 
+function isBlank(value: unknown) {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function opportunityFieldsFromBody(body: Record<string, unknown>, opportunity: Opportunity) {
+  const fields = new Set<string>();
+  const fieldKey = stringValue(body.fieldKey);
+  if (fieldKey) fields.add(fieldKey);
+  if (Array.isArray(body.allowedFields)) {
+    body.allowedFields.map((field) => stringValue(field)).filter(Boolean).forEach((field) => fields.add(field));
+  }
+  return [...fields].filter((field): field is keyof Opportunity => field in opportunity);
+}
+
 export async function POST(request: Request) {
   const { supabase, user, response } = await requireUser();
   if (response) return response;
@@ -29,7 +47,7 @@ export async function POST(request: Request) {
   const opportunityId = body.opportunityId;
   const action = stringValue(body.action);
 
-  if (!isUuid(opportunityId) || !["create_action_plan", "fill_section"].includes(action)) {
+  if (!isUuid(opportunityId) || !["create_action_plan", "fill_section", "fill_field", "fill_fields"].includes(action)) {
     return jsonError("Invalid Ember action request.");
   }
 
@@ -46,15 +64,30 @@ export async function POST(request: Request) {
     return jsonError("Opportunity not found.", 404);
   }
 
-  if (action === "fill_section") {
-    const section = stringValue(body.section ?? body.tab, "Research");
+  if (action === "fill_section" || action === "fill_field" || action === "fill_fields") {
+    const section = action === "fill_section" ? normalizeEmberSection(body.section ?? body.tab) : null;
+    const targetFields = section ? emberSectionFields[section].opportunity : opportunityFieldsFromBody(body, opportunity as Opportunity);
+    const targetNotes = section ? emberSectionFields[section].notes : [];
+    const targetCollections = section ? emberSectionFields[section].collections : [];
+    if (targetFields.length === 0 && targetNotes.length === 0 && targetCollections.length === 0) {
+      return jsonError("No valid Ember fields requested.");
+    }
+    const targetLabel = section ?? "targeted fields";
+    const fillBlanksOnly = body.fillBlanksOnly !== false;
+    const intent = stringValue(body.intent, action === "fill_field" ? "Improve this single field with a sharper replacement." : "Fill missing fields with a conservative cofounder-quality first pass.");
+    const allowedFields = [
+      ...targetFields.map((field) => `opportunity.${field}`),
+      ...targetNotes.map((field) => `notes.${field}`),
+      ...targetCollections
+    ];
+    const extraContext = stringValue(body.context);
     const context = buildOpportunityContext({
       opportunity,
       notes: notes.data,
       risks: risks.data ?? [],
       tasks: loadedTasks.data ?? [],
       documents: documents.data ?? [],
-      extra: `Only fill the ${section} section. Existing milestones: ${JSON.stringify(milestones.data ?? [])}`
+      extra: [`Only fill ${targetLabel}. Existing milestones: ${JSON.stringify(milestones.data ?? [])}`, extraContext].filter(Boolean).join("\n\n")
     });
 
     const upstream = await fetch(RESPONSES_API_URL, {
@@ -62,10 +95,11 @@ export async function POST(request: Request) {
       headers: getOpenAIHeaders(),
       body: JSON.stringify({
         model: EMBER_MODEL,
-        instructions: autofillPrompt(),
-        input: `Return JSON updates only for the ${section} section based on this context:\n${context}`,
-        max_output_tokens: 1800
-      })
+        instructions: sectionFillPrompt(targetLabel, allowedFields, intent),
+        input: `Return JSON updates only for ${targetLabel} based on this context:\n${context}`,
+        max_output_tokens: 3200
+      }),
+      signal: AbortSignal.timeout(10_000)
     }).catch((openAiError) => {
       console.error("OpenAI section fill failed", openAiError);
       return null;
@@ -82,14 +116,57 @@ export async function POST(request: Request) {
       console.error("Ember returned invalid section JSON", text);
       return NextResponse.json({ error: "Ember returned invalid section JSON." }, { status: 502 });
     }
+    let normalizedFill = section ? filterPatchForSection(normalizeEmberFieldPatch(fill), section) : normalizeEmberFieldPatch(fill);
+    if (!section) {
+      normalizedFill = {
+        ...normalizedFill,
+        opportunity: Object.fromEntries(Object.entries(normalizedFill.opportunity).filter(([key]) => targetFields.includes(key as keyof Opportunity))),
+        notes: {}
+      };
+    }
+    if (fillBlanksOnly) {
+      normalizedFill = {
+        ...normalizedFill,
+        opportunity: Object.fromEntries(Object.entries(normalizedFill.opportunity).filter(([key]) => isBlank((opportunity as Record<string, unknown>)[key]))),
+        notes: Object.fromEntries(Object.entries(normalizedFill.notes).filter(([key]) => isBlank((notes.data as Record<string, unknown> | null)?.[key])))
+      };
+    }
+    const existingTaskTexts = new Set((loadedTasks.data ?? []).map((task) => String(task.text ?? "").trim().toLowerCase()).filter(Boolean));
+    const newTasks = (normalizedFill.tasks ?? []).filter((task) => {
+      const text = String(task.text ?? "").trim().toLowerCase();
+      if (!text || existingTaskTexts.has(text)) return false;
+      existingTaskTexts.add(text);
+      return true;
+    });
+    const insertedTasks = newTasks.length
+      ? await supabase
+          .from("tasks")
+          .insert(
+            newTasks.map((task) => ({
+              opportunity_id: opportunityId,
+              user_id: user.id,
+              text: task.text ?? "Untitled task",
+              category: task.category ?? "research",
+              phase: task.phase ?? opportunity.phase,
+              priority: task.priority ?? "medium",
+              due_date: task.due_date ?? null,
+              done: Boolean(task.done)
+            }))
+          )
+          .select("*")
+      : { data: [], error: null };
+
+    if (insertedTasks.error) {
+      return NextResponse.json({ error: insertedTasks.error.message }, { status: 500 });
+    }
     await supabase.from("ember_messages").insert({
       opportunity_id: opportunityId,
       user_id: user.id,
       role: "assistant",
-      content: `I filled a starting point for the ${section} section. Review every field before relying on it.`,
+      content: `I filled a starting point for ${targetLabel}. Review every field before relying on it.`,
       agent_type: "core"
     });
-    return NextResponse.json({ fill: normalizeEmberFieldPatch(fill) });
+    return NextResponse.json({ fill: normalizedFill, tasks: insertedTasks.data ?? [] });
   }
 
   const actionTasks = [

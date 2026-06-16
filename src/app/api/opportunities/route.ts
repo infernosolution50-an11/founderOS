@@ -1,7 +1,67 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
+import { checkRateLimit } from "@/lib/api/rateLimit";
 import { arrayOfStrings, isUuid, jsonError, numberValue, readJsonObject, stringValue } from "@/lib/api/validation";
+import { extractJsonPayloads, normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
+import { fallbackAutofillPatch } from "@/lib/ember/fallback";
+import { autofillPrompt } from "@/lib/openai/agents/autofill";
+import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
 import { calculateOpportunityScore } from "@/lib/score";
+
+type ResponseContent = { text?: string };
+type ResponseOutput = { content?: ResponseContent[] };
+type DashboardTask = {
+  id: string;
+  opportunity_id: string;
+  text: string;
+  priority: "low" | "medium" | "high";
+  due_date: string | null;
+};
+const priorityRank = { high: 3, medium: 2, low: 1 } as const;
+
+function extractText(payload: { output_text?: unknown; output?: ResponseOutput[] }) {
+  if (typeof payload.output_text === "string") return payload.output_text;
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  return output
+    .flatMap((item: ResponseOutput) => (Array.isArray(item.content) ? item.content : []))
+    .map((content: ResponseContent) => content.text)
+    .filter(Boolean)
+    .join("");
+}
+
+async function getEmberAutofillPatch(opportunityName: string, idea: string) {
+  const upstream = await fetch(RESPONSES_API_URL, {
+    method: "POST",
+    headers: getOpenAIHeaders(),
+    body: JSON.stringify({
+      model: EMBER_MODEL,
+      instructions: autofillPrompt(),
+      input: JSON.stringify({ opportunityName, idea }),
+      max_output_tokens: 5000
+    }),
+    signal: AbortSignal.timeout(8_000)
+  }).catch((error) => {
+    console.error("OpenAI create autofill request failed", error);
+    return null;
+  });
+
+  if (!upstream) {
+    return fallbackAutofillPatch(opportunityName, idea);
+  }
+
+  if (!upstream.ok) {
+    console.error("OpenAI create autofill failed", await upstream.text().catch(() => ""));
+    return fallbackAutofillPatch(opportunityName, idea);
+  }
+
+  const text = extractText(await upstream.json());
+  const [payload] = extractJsonPayloads(text);
+  if (!payload) {
+    console.error("OpenAI create autofill returned invalid JSON", text);
+    return fallbackAutofillPatch(opportunityName, idea);
+  }
+  return normalizeEmberFieldPatch(payload);
+}
 
 export async function GET() {
   const { supabase, user, response } = await requireUser();
@@ -17,7 +77,41 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ opportunities: data });
+  const opportunityIds = (data ?? []).map((opportunity) => opportunity.id);
+  const { data: tasks, error: tasksError } = opportunityIds.length
+    ? await supabase
+        .from("tasks")
+        .select("id, opportunity_id, text, priority, due_date")
+        .in("opportunity_id", opportunityIds)
+        .eq("done", false)
+    : { data: [], error: null };
+
+  if (tasksError) {
+    return NextResponse.json({ error: tasksError.message }, { status: 500 });
+  }
+
+  const nextTaskByOpportunity = new Map<string, DashboardTask>();
+  for (const task of (tasks ?? []) as DashboardTask[]) {
+    const current = nextTaskByOpportunity.get(task.opportunity_id);
+    if (!current) {
+      nextTaskByOpportunity.set(task.opportunity_id, task);
+      continue;
+    }
+
+    const priorityDelta = priorityRank[task.priority] - priorityRank[current.priority];
+    const taskDueTime = task.due_date ? new Date(task.due_date).getTime() : Number.POSITIVE_INFINITY;
+    const currentDueTime = current.due_date ? new Date(current.due_date).getTime() : Number.POSITIVE_INFINITY;
+    if (priorityDelta > 0 || (priorityDelta === 0 && taskDueTime < currentDueTime)) {
+      nextTaskByOpportunity.set(task.opportunity_id, task);
+    }
+  }
+
+  return NextResponse.json({
+    opportunities: (data ?? []).map((opportunity) => ({
+      ...opportunity,
+      next_task: nextTaskByOpportunity.get(opportunity.id) ?? null
+    }))
+  });
 }
 
 export async function POST(request: Request) {
@@ -119,6 +213,14 @@ export async function POST(request: Request) {
   }
 
   const isExample = Boolean(body.example);
+  const idea = stringValue(body.idea ?? body.description);
+  if (!isExample && body.useEmberAutofill === true && idea) {
+    const limited = checkRateLimit(`ember:${user.id}`, 30, 10 * 60 * 1000);
+    if (!limited.allowed) {
+      return NextResponse.json({ error: "Too many Ember requests. Try again shortly." }, { status: 429, headers: { "Retry-After": String(limited.retryAfter) } });
+    }
+  }
+
   const opportunitySeed = isExample
     ? {
         name: "AI procurement copilot for mid-market finance teams",
@@ -244,6 +346,82 @@ export async function POST(request: Request) {
   if (notesResult.error) {
     console.error("Failed to create opportunity notes", notesResult.error);
     return jsonError("Opportunity created, but notes could not be initialized.", 500);
+  }
+
+  if (!isExample && body.useEmberAutofill === true && idea) {
+    const emberPatch = await getEmberAutofillPatch(data.name, idea);
+    if (emberPatch) {
+      const updatedOpportunity = { ...data, ...emberPatch.opportunity };
+      const scoreRisks = (emberPatch.risks ?? []).map((risk) => ({ heat_level: risk.heat_level ?? "medium", status: risk.status ?? "open" }));
+      const scoreTasks = (emberPatch.tasks ?? []).map((task) => ({ done: Boolean(task.done) }));
+      const scoreMilestones = (emberPatch.milestones ?? []).map((milestone) => ({ done: Boolean(milestone.done) }));
+      const score = calculateOpportunityScore(updatedOpportunity, scoreRisks, scoreTasks, scoreMilestones);
+      const opportunityResult = await supabase
+        .from("opportunities")
+        .update({ ...emberPatch.opportunity, opportunity_score: score })
+        .eq("id", data.id)
+        .eq("user_id", user.id)
+        .select("*")
+        .single();
+
+      if (!opportunityResult.error && opportunityResult.data) {
+        Object.assign(data, opportunityResult.data);
+      } else if (opportunityResult.error) {
+        console.error("Failed to persist Ember opportunity patch", opportunityResult.error);
+      }
+
+      if (Object.keys(emberPatch.notes).length > 0) {
+        const notesPatchResult = await supabase.from("opportunity_notes").update(emberPatch.notes).eq("opportunity_id", data.id).eq("user_id", user.id);
+        if (notesPatchResult.error) console.error("Failed to persist Ember notes patch", notesPatchResult.error);
+      }
+
+      if (emberPatch.risks?.length) {
+        const riskResult = await supabase.from("risk_assessments").insert(
+          emberPatch.risks.map((risk) => ({
+            opportunity_id: data.id,
+            user_id: user.id,
+            risk_label: risk.risk_label ?? "Untitled risk",
+            heat_level: risk.heat_level ?? "medium",
+            category: risk.category ?? "market",
+            likelihood: risk.likelihood ?? "high",
+            impact: risk.impact ?? "high",
+            mitigation_note: risk.mitigation_note ?? "",
+            owner: risk.owner ?? "Founder",
+            status: risk.status ?? "open"
+          }))
+        );
+        if (riskResult.error) console.error("Failed to persist Ember risks", riskResult.error);
+      }
+
+      if (emberPatch.milestones?.length) {
+        const milestoneResult = await supabase.from("milestones").insert(
+          emberPatch.milestones.map((milestone) => ({
+            opportunity_id: data.id,
+            user_id: user.id,
+            title: milestone.title ?? "Untitled milestone",
+            target_date: milestone.target_date ?? null,
+            done: Boolean(milestone.done)
+          }))
+        );
+        if (milestoneResult.error) console.error("Failed to persist Ember milestones", milestoneResult.error);
+      }
+
+      if (emberPatch.tasks?.length) {
+        const taskResult = await supabase.from("tasks").insert(
+          emberPatch.tasks.map((task) => ({
+            opportunity_id: data.id,
+            user_id: user.id,
+            text: task.text ?? "Untitled task",
+            category: task.category ?? "research",
+            phase: task.phase ?? data.phase,
+            priority: task.priority ?? "medium",
+            due_date: task.due_date ?? null,
+            done: Boolean(task.done)
+          }))
+        );
+        if (taskResult.error) console.error("Failed to persist Ember tasks", taskResult.error);
+      }
+    }
   }
 
   const messageResult = await supabase.from("ember_messages").insert({

@@ -91,8 +91,8 @@ export function ExecuteTab({ opportunity, tasks, milestones, isReadOnly, onOppor
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display text-xl font-semibold">Execute</h2>
-        <Button type="button" variant="secondary" size="sm" disabled={isReadOnly} onClick={() => onFillSection?.("Execute")}>
+        <h2 className="font-display text-xl font-semibold">Build</h2>
+        <Button type="button" variant="secondary" size="sm" disabled={isReadOnly} onClick={() => onFillSection?.("Build")}>
           Ask Ember to fill this section
         </Button>
       </div>
@@ -115,11 +115,11 @@ export function ExecuteTab({ opportunity, tasks, milestones, isReadOnly, onOppor
 
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          ["kpi_primary", "Primary KPI"],
-          ["kpi_revenue", "Revenue goal"],
-          ["kpi_learning", "Learning goal"],
-          ["sprint_goal_90_day", "90-day sprint goal"],
-          ["next_fundraise_trigger", "Next fundraise trigger"]
+          ["kpi_primary", "North star metric"],
+          ["kpi_revenue", "Revenue metric"],
+          ["kpi_learning", "Learning metric"],
+          ["sprint_goal_90_day", "90-day goal"],
+          ["next_fundraise_trigger", "What triggers your next raise?"]
         ].map(([key, label]) => (
           <label key={key} className="rounded-2xl border border-os-border bg-os-surface p-4 text-sm text-os-sub">
             <FieldLabel label={label} tooltip={fieldTooltips[key as keyof typeof fieldTooltips]} />
@@ -141,23 +141,6 @@ export function ExecuteTab({ opportunity, tasks, milestones, isReadOnly, onOppor
             className="mt-2 w-full rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo disabled:opacity-50"
           />
         </label>
-      </div>
-
-      <div className="rounded-2xl border border-os-border bg-os-surface p-4">
-        <div className="font-display text-sm font-semibold text-os-text">Conviction</div>
-        <div className="mt-3 flex gap-2">
-          {[1, 2, 3, 4, 5].map((star) => (
-            <button
-              key={star}
-              type="button"
-              onClick={() => onOpportunityChange({ conviction_stars: star })}
-              disabled={isReadOnly}
-              className={star <= opportunity.conviction_stars ? "text-2xl text-os-amber" : "text-2xl text-os-muted"}
-            >
-              ★
-            </button>
-          ))}
-        </div>
       </div>
 
       <section className="rounded-2xl border border-os-border bg-os-panel p-4">

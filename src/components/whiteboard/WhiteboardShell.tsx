@@ -1,285 +1,81 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Loader2, MessageCircle, PanelRightOpen, Upload } from "lucide-react";
+import { ArrowLeft, Check, Loader2, MessageCircle, StickyNote, Upload } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { DocUpload } from "@/components/whiteboard/DocUpload";
 import { EmberPanel } from "@/components/whiteboard/EmberPanel";
+import { NotesDrawer } from "@/components/whiteboard/NotesDrawer";
 import { OpportunityScore } from "@/components/whiteboard/OpportunityScore";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
-import { ExecuteTab } from "@/components/whiteboard/tabs/ExecuteTab";
-import { FitTab } from "@/components/whiteboard/tabs/FitTab";
+import { BuildTab } from "@/components/whiteboard/tabs/BuildTab";
+import { DiscoverTab } from "@/components/whiteboard/tabs/DiscoverTab";
 import { MarketTab } from "@/components/whiteboard/tabs/MarketTab";
-import { MoatTab } from "@/components/whiteboard/tabs/MoatTab";
-import { NotesTab } from "@/components/whiteboard/tabs/NotesTab";
-import { ResearchTab } from "@/components/whiteboard/tabs/ResearchTab";
 import { RisksTab } from "@/components/whiteboard/tabs/RisksTab";
 import { SignalTab } from "@/components/whiteboard/tabs/SignalTab";
-import { useCreateOpportunity, useOpportunity, useUpdateOpportunity } from "@/hooks/useOpportunity";
-import { normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
-import { calculateOpportunityScore } from "@/lib/score";
+import { useAutofill } from "@/hooks/useAutofill";
+import { useCreateOpportunity } from "@/hooks/useOpportunity";
+import { type MobilePanel, useWhiteboardState } from "@/hooks/useWhiteboardState";
 import { cn } from "@/lib/utils";
-import type { AgentType, Milestone, Opportunity, OpportunityNotes, RiskAssessment } from "@/types";
-
-const tabs = ["Research", "Market", "Moat", "Risks", "Execute", "Notes", "Fit", "Signal"] as const;
+import type { AgentType, DocumentRecord } from "@/types";
+const tabs = ["Discover", "Market", "Build", "Risks", "Signal"] as const;
 type Tab = (typeof tabs)[number];
-type MobilePanel = "whiteboard" | "ember" | "docs";
 
 const tabAgent: Record<Tab, AgentType> = {
-  Research: "core",
+  Discover: "core",
   Market: "market",
-  Moat: "moat",
+  Build: "execution",
   Risks: "risk",
-  Execute: "execution",
-  Notes: "core",
-  Fit: "core",
   Signal: "market"
 };
 
-function emptyNotes(opportunity: Opportunity): OpportunityNotes {
-  return {
-    id: "local",
-    opportunity_id: opportunity.id,
-    user_id: opportunity.user_id,
-    thesis: "",
-    customer_notes: "",
-    open_questions: "",
-    kill_conditions: "",
-    moat_insight: "",
-    decision_log: [],
-    updated_at: new Date().toISOString()
-  };
-}
-
 export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
   const router = useRouter();
-  const { data, isLoading, error, refetch } = useOpportunity(opportunityId);
-  const { mutateAsync: saveOpportunity } = useUpdateOpportunity(opportunityId);
   const createOpportunity = useCreateOpportunity();
-  const [activeTab, setActiveTab] = useState<Tab>("Research");
-  const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
-  const [notes, setNotes] = useState<OpportunityNotes | null>(null);
-  const [risks, setRisks] = useState<RiskAssessment[]>([]);
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [activeTab, setActiveTab] = useState<Tab>("Discover");
   const [quickAction, setQuickAction] = useState<string | null>(null);
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("whiteboard");
-  const [isEmberCollapsed, setIsEmberCollapsed] = useState(false);
-  const [autofillIdea, setAutofillIdea] = useState("");
-  const [isAutofilling, setIsAutofilling] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
-  const [dirtyVersion, setDirtyVersion] = useState(0);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didHydrate = useRef(false);
-  const changeVersion = useRef(0);
-  const savedVersion = useRef(0);
-
-  useEffect(() => {
-    if (!data) return;
-    if (changeVersion.current !== savedVersion.current) return;
-    setOpportunity(data.opportunity);
-    setNotes(data.notes ?? emptyNotes(data.opportunity));
-    setRisks(data.risks);
-    setMilestones(data.milestones);
-    didHydrate.current = true;
-    setSaveStatus("saved");
-  }, [data]);
-
-  useEffect(() => {
-    const value = window.localStorage.getItem(`founderos:ember-collapsed:${opportunityId}`);
-    setIsEmberCollapsed(value === "true");
-  }, [opportunityId]);
-
-  useEffect(() => {
-    window.localStorage.setItem(`founderos:ember-collapsed:${opportunityId}`, String(isEmberCollapsed));
-  }, [isEmberCollapsed, opportunityId]);
+  const [isEmberOpen, setIsEmberOpen] = useState(false);
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [pendingDocumentAction, setPendingDocumentAction] = useState<DocumentRecord | null>(null);
+  const state = useWhiteboardState(opportunityId);
+  const { data, isLoading, error, refetch, opportunity, notes, risks, milestones, mobilePanel, setMobilePanel, saveStatus, score, isReadOnly, lowConfidenceFields, hasEarlySignal, applyEmberPatch, onOpportunityChange, onNotesChange, onRisksChange, onMilestonesChange } = state;
+  const { autofillIdea, setAutofillIdea, isAutofilling, emberAction, handleAutofill, handleEmberAction } = useAutofill({
+    opportunityId,
+    opportunityName: opportunity?.name ?? "",
+    isReadOnly,
+    onFieldsUpdated: applyEmberPatch,
+    onTasksChanged: async () => {
+      await refetch();
+    }
+  });
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "e") {
         event.preventDefault();
-        setIsEmberCollapsed((value) => !value);
+        setIsEmberOpen((value) => !value);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  function markDirty() {
-    changeVersion.current += 1;
-    setDirtyVersion(changeVersion.current);
-  }
+  if (isLoading) return <LoadingWhiteboard />;
+  if (error || !opportunity || !notes || !data) return <div className="min-h-screen bg-os-bg p-8 text-os-red">Unable to load this opportunity.</div>;
 
-  const score = useMemo(() => {
-    if (!opportunity) return 0;
-    return calculateOpportunityScore(opportunity, risks, data?.tasks ?? [], milestones);
-  }, [opportunity, risks, data?.tasks, milestones]);
-
-  useEffect(() => {
-    if (!didHydrate.current || !opportunity || !notes) return;
-    if (opportunity.is_demo) {
-      setSaveStatus("saved");
-      return;
-    }
-    if (dirtyVersion === savedVersion.current) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    setSaveStatus("saving");
-
-    saveTimer.current = setTimeout(async () => {
-      const versionToSave = dirtyVersion;
-      try {
-        await saveOpportunity({
-          ...opportunity,
-          opportunity_score: score,
-          notes,
-          risks,
-          milestones
-        });
-        savedVersion.current = Math.max(savedVersion.current, versionToSave);
-        setSaveStatus(changeVersion.current === versionToSave ? "saved" : "saving");
-      } catch (saveError) {
-        setSaveStatus("error");
-        toast.error(saveError instanceof Error ? saveError.message : "Couldn't save — tap to retry", () => {
-          setOpportunity((current) => (current ? { ...current } : current));
-          markDirty();
-        });
-      }
-    }, 1500);
-
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [dirtyVersion, milestones, notes, opportunity, risks, saveOpportunity, score]);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-os-bg p-4 md:p-8">
-        <Skeleton className="h-14 w-full rounded-os-lg" />
-        <div className="mt-5 grid gap-5 lg:grid-cols-[52fr_48fr]">
-          <Skeleton shape="full" />
-          <Skeleton shape="full" />
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !opportunity || !notes || !data) {
-    return <div className="min-h-screen bg-os-bg p-8 text-os-red">Unable to load this opportunity.</div>;
-  }
-
-  const isReadOnly = Boolean(opportunity.is_demo);
   async function copyDemoToWorkspace() {
-    const sourceDemoId = opportunity?.id;
-    if (!opportunity?.is_demo || !sourceDemoId) return;
+    if (!opportunity?.is_demo) return;
     try {
-      const result = await createOpportunity.mutateAsync({ sourceDemoId });
+      const result = await createOpportunity.mutateAsync({ sourceDemoId: opportunity.id });
       toast.success("Demo copied to your workspace.");
       router.push(`/opportunity/${result.opportunity.id}`);
     } catch (copyError) {
       toast.error(copyError instanceof Error ? copyError.message : "Could not copy demo.");
-    }
-  }
-
-  function applyEmberPatch(payload: unknown) {
-    if (!opportunity) return;
-    const patch = normalizeEmberFieldPatch(payload);
-    let updated = 0;
-
-    const opportunityPatch = patch.opportunity;
-    const opportunityFieldCount = Object.keys(opportunityPatch).length;
-    if (opportunityFieldCount > 0) {
-      markDirty();
-      setOpportunity((current) => (current ? { ...current, ...opportunityPatch } : current));
-      updated += opportunityFieldCount;
-    }
-
-    const notesPatch = patch.notes;
-    const notesFieldCount = Object.keys(notesPatch).length;
-    if (notesFieldCount > 0) {
-      markDirty();
-      setNotes((current) => (current ? { ...current, ...notesPatch } : current));
-      updated += notesFieldCount;
-    }
-
-    if (patch.risks) {
-      markDirty();
-      setRisks(
-        patch.risks.map((risk) => ({
-          id: risk.id ?? crypto.randomUUID(),
-          opportunity_id: opportunity.id,
-          user_id: opportunity.user_id,
-          risk_label: risk.risk_label ?? "Untitled risk",
-          heat_level: risk.heat_level ?? "medium",
-          category: risk.category ?? "market",
-          likelihood: risk.likelihood ?? "high",
-          impact: risk.impact ?? "high",
-          mitigation_note: risk.mitigation_note ?? "",
-          owner: risk.owner ?? "Founder",
-          status: risk.status ?? "open",
-          created_at: risk.created_at ?? new Date().toISOString()
-        }))
-      );
-      updated += patch.risks.length;
-    }
-
-    if (patch.milestones) {
-      markDirty();
-      setMilestones(
-        patch.milestones.map((milestone) => ({
-          id: milestone.id ?? crypto.randomUUID(),
-          opportunity_id: opportunity.id,
-          user_id: opportunity.user_id,
-          title: milestone.title ?? "Untitled milestone",
-          target_date: milestone.target_date ?? null,
-          done: Boolean(milestone.done),
-          created_at: milestone.created_at ?? new Date().toISOString()
-        }))
-      );
-      updated += patch.milestones.length;
-    }
-
-    if (updated > 0) {
-      toast.success(`Ember updated ${updated} fields — review and adjust.`);
-    }
-  }
-
-  async function fillSection(section: string) {
-    if (isReadOnly || !opportunity) return;
-    try {
-      const response = await fetch("/api/ember/actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunityId: opportunity.id, action: "fill_section", section })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error ?? "Could not fill this section.");
-      applyEmberPatch(payload.fill);
-    } catch (fillError) {
-      toast.error(fillError instanceof Error ? fillError.message : "Could not fill this section.");
-    }
-  }
-
-  async function runAutofill() {
-    if (!autofillIdea.trim() || isReadOnly || !opportunity) return;
-    setIsAutofilling(true);
-    try {
-      const response = await fetch("/api/ember/autofill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunityName: opportunity.name, idea: autofillIdea })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error ?? "Could not autofill this opportunity.");
-      applyEmberPatch(payload.autofill);
-      setAutofillIdea("");
-    } catch (autofillError) {
-      toast.error(autofillError instanceof Error ? autofillError.message : "Could not autofill this opportunity.");
-    } finally {
-      setIsAutofilling(false);
     }
   }
 
@@ -291,188 +87,112 @@ export function WhiteboardShell({ opportunityId }: { opportunityId: string }) {
     tasks: data.tasks,
     documents: data.documents,
     isReadOnly,
-    onOpportunityChange: (patch: Partial<Opportunity>) => {
-      if (!isReadOnly) {
-        markDirty();
-        setOpportunity((current) => (current ? { ...current, ...patch } : current));
-      }
-    },
-    onNotesChange: (patch: Partial<OpportunityNotes>) => {
-      if (!isReadOnly) {
-        markDirty();
-        setNotes((current) => (current ? { ...current, ...patch } : current));
-      }
-    },
-    onRisksChange: (nextRisks: RiskAssessment[]) => {
-      if (!isReadOnly) {
-        markDirty();
-        setRisks(nextRisks);
-      }
-    },
-    onMilestonesChange: (nextMilestones: Milestone[]) => {
-      if (!isReadOnly) {
-        markDirty();
-        setMilestones(nextMilestones);
-      }
-    },
+    onOpportunityChange,
+    onNotesChange,
+    onRisksChange,
+    onMilestonesChange,
     onAgentAction: (message: string) => {
-      if (!isReadOnly) setQuickAction(message);
+      if (!isReadOnly) {
+        setQuickAction(message);
+        setIsEmberOpen(true);
+      }
     },
-    onFillSection: fillSection,
+    onFillSection: handleEmberAction,
     onFieldUpdates: applyEmberPatch,
     onDocumentsChanged: async () => {
       await refetch();
     }
   };
 
-  const hasEarlySignal =
-    [opportunity.urgency, opportunity.pain, opportunity.frequency, opportunity.willingness_to_pay].filter((value) => value !== 5).length >= 2 ||
-    opportunity.timing_signals.length > 0;
-
   const activeTabContent = (
     <div className={cn("animate-fade-in", isReadOnly && "pointer-events-none opacity-75")}>
-      {activeTab === "Research" && <ResearchTab {...tabProps} />}
+      {activeTab === "Discover" && <DiscoverTab {...tabProps} />}
       {activeTab === "Market" && <MarketTab {...tabProps} />}
-      {activeTab === "Moat" && <MoatTab {...tabProps} />}
+      {activeTab === "Build" && <BuildTab {...tabProps} />}
       {activeTab === "Risks" && <RisksTab {...tabProps} />}
-      {activeTab === "Execute" && <ExecuteTab {...tabProps} />}
-      {activeTab === "Notes" && <NotesTab {...tabProps} />}
-      {activeTab === "Fit" && <FitTab {...tabProps} />}
       {activeTab === "Signal" && <SignalTab {...tabProps} />}
     </div>
   );
 
-  const emberPanel = (
-    <EmberPanel
-      opportunityId={opportunity.id}
-      initialMessages={data.messages}
-      activeAgent={tabAgent[activeTab]}
-      activeTab={activeTab}
-      quickAction={quickAction}
-      onQuickActionHandled={() => setQuickAction(null)}
-      readOnly={isReadOnly}
-      onFieldUpdates={applyEmberPatch}
-      onCollapse={() => setIsEmberCollapsed(true)}
-      onRefresh={async () => {
-        await refetch();
-      }}
-    />
-  );
-
   return (
     <div className="min-h-screen bg-os-bg text-os-text">
-      <header className="sticky top-0 z-20 border-b border-os-border bg-os-bg/90 px-4 py-3 backdrop-blur md:px-5 md:py-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-4">
-            <Link href="/dashboard" className="inline-flex min-h-10 items-center gap-2 rounded-os-md px-2 text-os-sm text-os-sub hover:bg-os-panel hover:text-os-text">
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              Dashboard
-            </Link>
-            <input
-              aria-label="Opportunity name"
-              value={opportunity.name}
-              onChange={(event) => {
-                if (!isReadOnly) {
-                  markDirty();
-                  setOpportunity({ ...opportunity, name: event.target.value });
-                }
-              }}
-              disabled={isReadOnly}
-              className="h-11 min-w-0 rounded-os-md border border-os-border bg-os-surface px-3 font-display text-base font-semibold text-os-text focus:border-os-indigo disabled:opacity-80 md:h-9 md:text-lg"
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            {isReadOnly && <Badge tone="indigo">Shared demo</Badge>}
-            <Badge tone={isReadOnly ? "indigo" : saveStatus === "error" ? "red" : saveStatus === "saving" ? "amber" : "green"} className="gap-2">
-              {saveStatus === "saving" ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : <Check className="h-3 w-3" aria-hidden="true" />}
-              {isReadOnly ? "Read-only" : saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "Saved"}
-            </Badge>
-            {isReadOnly && (
-              <Button type="button" variant="primary" size="sm" loading={createOpportunity.isPending} onClick={copyDemoToWorkspace}>
-                Copy to my workspace
-              </Button>
-            )}
-            <DocUpload compact opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} onFieldUpdates={applyEmberPatch} />
-            <OpportunityScore score={score} />
-          </div>
-        </div>
-      </header>
-
-      <div className="grid grid-cols-3 gap-2 border-b border-os-border bg-os-surface p-2 lg:hidden">
-        {[
-          ["whiteboard", "Whiteboard", MessageCircle],
-          ["ember", "Ember", MessageCircle],
-          ["docs", "Docs", Upload]
-        ].map(([value, label, Icon]) => (
-          <Button
-            key={value as string}
-            type="button"
-            variant={mobilePanel === value ? "primary" : "secondary"}
-            size="md"
-            onClick={() => setMobilePanel(value as MobilePanel)}
-            leftIcon={<Icon className="h-4 w-4" aria-hidden="true" />}
-          >
-            {label as string}
-          </Button>
-        ))}
-      </div>
-
-      <main className={cn("min-h-[calc(100vh-77px)] transition-all duration-300 lg:grid", isEmberCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-[52fr_48fr]")}>
-        <section className={cn("border-r border-os-border p-4 md:p-5", mobilePanel !== "whiteboard" && "hidden lg:block")}>
+      <Header opportunityName={opportunity.name} isReadOnly={isReadOnly} saveStatus={saveStatus} score={score} copyPending={createOpportunity.isPending} onNameChange={(name) => onOpportunityChange({ name })} onCopy={copyDemoToWorkspace} onOpenEmber={() => setIsEmberOpen(true)} onOpenNotes={() => setIsNotesOpen(true)} upload={<DocUpload compact opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} onFieldUpdates={applyEmberPatch} onPendingDocumentActionChange={(document) => { setPendingDocumentAction(document); if (document) setIsNotesOpen(true); }} />} />
+      <MobileSwitcher value={mobilePanel} onChange={setMobilePanel} />
+      <main className="min-h-[calc(100vh-77px)]">
+        <section className={cn("p-4 md:p-5", mobilePanel !== "whiteboard" && "hidden lg:block")}>
           <Tabs items={tabs.map((tab) => ({ value: tab, label: tab }))} value={activeTab} onChange={setActiveTab} className="mb-5" />
-          {isReadOnly && (
-            <div className="mb-5 rounded-os-md border border-os-indigo/40 bg-os-indigo/10 p-4">
-              <p className="text-os-sm text-os-text">This shared demo is read-only for everyone. Copy it to your workspace to edit fields, upload documents, create tasks, or chat with Ember.</p>
-              <Button type="button" variant="primary" size="md" className="mt-3" loading={createOpportunity.isPending} onClick={copyDemoToWorkspace}>
-                Copy to my workspace
-              </Button>
-            </div>
-          )}
-          {!isReadOnly && hasEarlySignal && activeTab === "Research" && (
-            <div className="mb-5 rounded-os-md border border-os-indigo/40 bg-os-indigo/10 p-4">
-              <p className="text-os-sm text-os-text">You have enough signal for Ember to pressure-test the market angle.</p>
-              <Button type="button" variant="primary" size="md" className="mt-3" onClick={() => setQuickAction("Based on what I've entered, analyze the market opportunity")}>
-                Ask Ember about the market opportunity
-              </Button>
-            </div>
-          )}
-          {!isReadOnly && (
-            <div className="mb-5 rounded-os-md border border-os-border bg-os-surface p-4">
-              <p className="font-display text-sm font-semibold text-os-text">Let Ember fill this</p>
-              <p className="mt-1 text-os-sm text-os-sub">Describe your idea in 1-3 sentences and Ember will fill in a starting point for every field.</p>
-              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
-                <input
-                  value={autofillIdea}
-                  onChange={(event) => setAutofillIdea(event.target.value)}
-                  placeholder="Example: AI copilot that helps finance teams approve SaaS purchases in Slack..."
-                  className="rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo"
-                />
-                <Button type="button" variant="primary" size="md" loading={isAutofilling} disabled={!autofillIdea.trim() || isAutofilling} onClick={runAutofill}>
-                  Let Ember fill this
-                </Button>
-              </div>
-            </div>
-          )}
+          {isReadOnly ? <ReadOnlyNotice loading={createOpportunity.isPending} onCopy={copyDemoToWorkspace} /> : <EmberActions activeTab={activeTab} emberAction={emberAction} lowConfidenceFields={lowConfidenceFields} onFill={handleEmberAction} />}
+          {!isReadOnly && hasEarlySignal && activeTab === "Discover" && <MarketNudge onClick={() => setQuickAction("Based on what I've entered, analyze the market opportunity")} />}
+          {!isReadOnly && <AutofillBox value={autofillIdea} loading={isAutofilling} onChange={setAutofillIdea} onSubmit={handleAutofill} />}
           {activeTabContent}
         </section>
-
-        <div className={cn(mobilePanel !== "ember" && "hidden lg:block", isEmberCollapsed && "lg:hidden")}>{emberPanel}</div>
         <section className={cn("p-4 md:p-5 lg:hidden", mobilePanel !== "docs" && "hidden")}>
           <DocUpload opportunityId={opportunity.id} disabled={isReadOnly} onSynthesized={() => refetch()} onFieldUpdates={applyEmberPatch} />
         </section>
       </main>
-      {isEmberCollapsed && (
-        <Button
-          type="button"
-          variant="primary"
-          size="md"
-          className="fixed bottom-5 right-5 z-30 hidden rounded-full shadow-os-lg lg:inline-flex"
-          onClick={() => setIsEmberCollapsed(false)}
-          leftIcon={<PanelRightOpen className="h-4 w-4" aria-hidden="true" />}
-        >
-          Open Ember
-        </Button>
+      {isEmberOpen && (
+        <div className="fixed inset-0 z-40">
+          <button type="button" aria-label="Close Ember overlay" className="absolute inset-0 bg-black/30" onClick={() => setIsEmberOpen(false)} />
+          <aside className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-os-border bg-os-bg shadow-os-lg">
+            <EmberPanel opportunityId={opportunity.id} initialMessages={data.messages} activeAgent={tabAgent[activeTab]} activeTab={activeTab} quickAction={quickAction} onQuickActionHandled={() => setQuickAction(null)} readOnly={isReadOnly} onFieldUpdates={applyEmberPatch} onCollapse={() => setIsEmberOpen(false)} onRefresh={async () => { await refetch(); }} />
+          </aside>
+        </div>
       )}
+      <NotesDrawer open={isNotesOpen} opportunity={opportunity} notes={notes} documents={data.documents} pendingDocumentAction={pendingDocumentAction} isReadOnly={isReadOnly} onClose={() => setIsNotesOpen(false)} onNotesChange={onNotesChange} onAgentAction={(message) => { setQuickAction(message); setIsNotesOpen(false); setIsEmberOpen(true); }} onFillNotes={() => handleEmberAction("Notes", "Fill the notes drawer with thesis, customer notes, open questions, kill conditions, moat insight, and decision log")} onFieldUpdates={applyEmberPatch} onPendingDocumentActionChange={setPendingDocumentAction} onDocumentsChanged={async () => { await refetch(); }} onDocumentResponse={async (message) => { await refetch(); if (message && !message.startsWith("Uploaded document:")) { setIsNotesOpen(false); setIsEmberOpen(true); } }} />
     </div>
   );
+}
+
+function LoadingWhiteboard() {
+  return (
+    <div className="min-h-screen bg-os-bg p-4 md:p-8">
+      <Skeleton className="h-14 w-full rounded-os-lg" />
+      <div className="mt-5 grid gap-5 lg:grid-cols-[52fr_48fr]">
+        <Skeleton shape="full" />
+        <Skeleton shape="full" />
+      </div>
+    </div>
+  );
+}
+
+function Header({ opportunityName, isReadOnly, saveStatus, score, copyPending, upload, onNameChange, onCopy, onOpenEmber, onOpenNotes }: { opportunityName: string; isReadOnly: boolean; saveStatus: "saved" | "saving" | "error"; score: number; copyPending: boolean; upload: ReactNode; onNameChange: (name: string) => void; onCopy: () => void; onOpenEmber: () => void; onOpenNotes: () => void }) {
+  return (
+    <header className="sticky top-0 z-20 border-b border-os-border bg-os-bg/90 px-4 py-3 backdrop-blur md:px-5 md:py-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link href="/dashboard" className="inline-flex min-h-10 items-center gap-2 rounded-os-md px-2 text-os-sm text-os-sub hover:bg-os-panel hover:text-os-text"><ArrowLeft className="h-4 w-4" aria-hidden="true" />Dashboard</Link>
+          <input aria-label="Opportunity name" value={opportunityName} onChange={(event) => onNameChange(event.target.value)} disabled={isReadOnly} className="h-11 min-w-0 rounded-os-md border border-os-border bg-os-surface px-3 font-display text-base font-semibold text-os-text focus:border-os-indigo disabled:opacity-80 md:h-9 md:text-lg" />
+        </div>
+        <div className="flex items-center gap-3">
+          {isReadOnly && <Badge tone="indigo">Shared demo</Badge>}
+          <Badge tone={isReadOnly ? "indigo" : saveStatus === "error" ? "red" : saveStatus === "saving" ? "amber" : "green"} className="gap-2">{saveStatus === "saving" ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : <Check className="h-3 w-3" aria-hidden="true" />}{isReadOnly ? "Read-only" : saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save failed" : "Saved"}</Badge>
+          {isReadOnly && <Button type="button" variant="primary" size="sm" loading={copyPending} onClick={onCopy}>Copy to my workspace</Button>}
+          {upload}
+          <Button type="button" variant="secondary" size="sm" onClick={onOpenNotes} leftIcon={<StickyNote className="h-4 w-4" aria-hidden="true" />}>Notes</Button>
+          <Button type="button" variant="primary" size="sm" onClick={onOpenEmber} leftIcon={<MessageCircle className="h-4 w-4" aria-hidden="true" />}>Ask Ember</Button>
+          <OpportunityScore score={score} />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function MobileSwitcher({ value, onChange }: { value: MobilePanel; onChange: (value: MobilePanel) => void }) {
+  return <div className="grid grid-cols-2 gap-2 border-b border-os-border bg-os-surface p-2 lg:hidden">{[["whiteboard", "Whiteboard", MessageCircle], ["docs", "Docs", Upload]].map(([next, label, Icon]) => <Button key={next as string} type="button" variant={value === next ? "primary" : "secondary"} size="md" onClick={() => onChange(next as MobilePanel)} leftIcon={<Icon className="h-4 w-4" aria-hidden="true" />}>{label as string}</Button>)}</div>;
+}
+
+function ReadOnlyNotice({ loading, onCopy }: { loading: boolean; onCopy: () => void }) {
+  return <div className="mb-5 rounded-os-md border border-os-indigo/40 bg-os-indigo/10 p-4"><p className="text-os-sm text-os-text">This shared demo is read-only for everyone. Copy it to your workspace to edit fields, upload documents, create tasks, or chat with Ember.</p><Button type="button" variant="primary" size="md" className="mt-3" loading={loading} onClick={onCopy}>Copy to my workspace</Button></div>;
+}
+
+function EmberActions({ activeTab, emberAction, lowConfidenceFields, onFill }: { activeTab: Tab; emberAction: string | null; lowConfidenceFields: string[]; onFill: (section: string, intent?: string) => void }) {
+  return <div className="mb-5 rounded-os-md border border-os-border bg-os-surface p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-display text-sm font-semibold text-os-text">Ember cofounder actions</p><p className="mt-1 text-os-sm text-os-sub">Use structured actions to make Ember update the whiteboard directly. Chat is available for explanation, but these actions write to the UI.</p></div>{lowConfidenceFields.length > 0 && <Badge tone="amber">Review {lowConfidenceFields.length} low-confidence estimates</Badge>}</div><div className="mt-3 grid gap-2 md:grid-cols-4"><Button type="button" variant="primary" size="sm" loading={emberAction === `${activeTab}:Fill missing fields`} onClick={() => onFill(activeTab, "Fill missing fields")}>Fill missing fields</Button><Button type="button" variant="secondary" size="sm" loading={emberAction === `${activeTab}:Improve this section`} onClick={() => onFill(activeTab, "Improve this section with sharper cofounder-quality assumptions")}>Improve this tab</Button><Button type="button" variant="secondary" size="sm" loading={emberAction === "Risks:Stress-test the opportunity and generate the most important risks"} onClick={() => onFill("Risks", "Stress-test the opportunity and generate the most important risks")}>Stress-test</Button><Button type="button" variant="secondary" size="sm" loading={emberAction === "Build:Generate the next 90 days with milestones and tasks"} onClick={() => onFill("Build", "Generate the next 90 days with milestones and tasks")}>Next 90 days</Button></div>{lowConfidenceFields.length > 0 && <p className="mt-3 text-os-xs text-os-sub">Low-confidence estimates: {lowConfidenceFields.join(", ")}. Editing a field clears its Ember estimate marker.</p>}</div>;
+}
+
+function MarketNudge({ onClick }: { onClick: () => void }) {
+  return <div className="mb-5 rounded-os-md border border-os-indigo/40 bg-os-indigo/10 p-4"><p className="text-os-sm text-os-text">You have enough signal for Ember to pressure-test the market angle.</p><Button type="button" variant="primary" size="md" className="mt-3" onClick={onClick}>Ask Ember about the market opportunity</Button></div>;
+}
+
+function AutofillBox({ value, loading, onChange, onSubmit }: { value: string; loading: boolean; onChange: (value: string) => void; onSubmit: () => void }) {
+  return <div className="mb-5 rounded-os-md border border-os-border bg-os-surface p-4"><p className="font-display text-sm font-semibold text-os-text">Give Ember more context</p><p className="mt-1 text-os-sm text-os-sub">Add a short update and Ember will repopulate the full opportunity as a cofounder-quality working draft.</p><div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]"><input value={value} onChange={(event) => onChange(event.target.value)} placeholder="Example: AI copilot that helps finance teams approve SaaS purchases in Slack..." className="rounded-xl border border-os-border bg-os-panel px-3 py-2 text-os-text focus:border-os-indigo" /><Button type="button" variant="primary" size="md" loading={loading} disabled={!value.trim() || loading} onClick={onSubmit}>Let Ember fill this</Button></div></div>;
 }

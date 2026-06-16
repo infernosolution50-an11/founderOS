@@ -11,6 +11,10 @@ export type OpportunityBundle = {
   messages: EmberMessage[];
 };
 
+export type DashboardOpportunity = Opportunity & {
+  next_task: Pick<Task, "id" | "opportunity_id" | "text" | "priority" | "due_date"> | null;
+};
+
 async function fetchOpportunity(id: string): Promise<OpportunityBundle> {
   const response = await fetch(`/api/opportunities/${id}`);
   if (!response.ok) throw new Error("Failed to load opportunity");
@@ -48,7 +52,7 @@ export function useUpdateOpportunity(id: string) {
 export function useOpportunities() {
   return useQuery({
     queryKey: ["opportunities"],
-    queryFn: async (): Promise<{ opportunities: Opportunity[] }> => {
+    queryFn: async (): Promise<{ opportunities: DashboardOpportunity[] }> => {
       const response = await fetch("/api/opportunities");
       if (!response.ok) throw new Error("Failed to load opportunities");
       return response.json();
@@ -60,7 +64,7 @@ export function useCreateOpportunity() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payload?: { example?: boolean; sourceDemoId?: string }) => {
+    mutationFn: async (payload?: { example?: boolean; sourceDemoId?: string; name?: string; idea?: string; useEmberAutofill?: boolean }) => {
       const response = await fetch("/api/opportunities", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

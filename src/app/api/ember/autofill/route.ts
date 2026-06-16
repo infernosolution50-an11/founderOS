@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/api/auth";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { jsonError, readJsonObject, stringValue } from "@/lib/api/validation";
 import { extractJsonPayloads, normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
+import { fallbackAutofillPatch } from "@/lib/ember/fallback";
 import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
 import { autofillPrompt } from "@/lib/openai/agents/autofill";
 
@@ -48,17 +49,18 @@ export async function POST(request: Request) {
         model: EMBER_MODEL,
         instructions: autofillPrompt(),
         input: JSON.stringify({ opportunityName, idea }),
-        max_output_tokens: 2500
-      })
+        max_output_tokens: 5000
+      }),
+      signal: AbortSignal.timeout(8_000)
     });
   } catch (error) {
     console.error("OpenAI autofill request failed", error);
-    return NextResponse.json({ error: "Ember autofill is unavailable right now." }, { status: 502 });
+    return NextResponse.json({ autofill: fallbackAutofillPatch(opportunityName, idea), fallback: true });
   }
 
   if (!upstream.ok) {
     console.error("OpenAI autofill failed", await upstream.text().catch(() => ""));
-    return NextResponse.json({ error: "Ember autofill is unavailable right now." }, { status: 502 });
+    return NextResponse.json({ autofill: fallbackAutofillPatch(opportunityName, idea), fallback: true });
   }
 
   const payload = await upstream.json();
@@ -66,7 +68,7 @@ export async function POST(request: Request) {
   const [autofill] = extractJsonPayloads(text);
   if (!autofill) {
     console.error("Ember returned invalid autofill JSON", text);
-    return NextResponse.json({ error: "Ember returned invalid autofill JSON." }, { status: 502 });
+    return NextResponse.json({ autofill: fallbackAutofillPatch(opportunityName, idea), fallback: true });
   }
   return NextResponse.json({ autofill: normalizeEmberFieldPatch(autofill) });
 }

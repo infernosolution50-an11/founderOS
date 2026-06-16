@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractJsonPayloads, normalizeEmberFieldPatch } from "./fieldUpdates";
+import { extractJsonPayloads, filterPatchForSection, normalizeEmberFieldPatch } from "./fieldUpdates";
 
 describe("extractJsonPayloads", () => {
   it("parses fenced and prose-wrapped JSON payloads", () => {
@@ -25,6 +25,7 @@ describe("normalizeEmberFieldPatch", () => {
       moat_network: 1,
       conviction_stars: 5
     });
+    expect(patch.confidence["opportunity.urgency"]).toBe("low");
   });
 
   it("normalizes enum aliases and array-like fields", () => {
@@ -63,5 +64,59 @@ describe("normalizeEmberFieldPatch", () => {
     expect(patch.notes.decision_log?.[0]?.body).toBe("Focused on mid-market finance teams.");
     expect(patch.risks?.[0]).toMatchObject({ risk_label: "No budget owner", category: "financial", heat_level: "high" });
     expect(patch.milestones?.[0]).toMatchObject({ title: "Close first paid pilot", target_date: "2026-08-01" });
+  });
+
+  it("normalizes task patches for execution workflows", () => {
+    const patch = normalizeEmberFieldPatch({
+      fields: {
+        tasks: [
+          {
+            title: "Interview five finance buyers",
+            category: "sales",
+            phase: "1->10",
+            priority: "high",
+            due_date: "2026-09-01",
+            confidence: "medium"
+          }
+        ]
+      }
+    });
+
+    expect(patch.tasks?.[0]).toMatchObject({
+      text: "Interview five finance buyers",
+      category: "sales",
+      phase: "1→10",
+      priority: "high",
+      due_date: "2026-09-01",
+      done: false
+    });
+    expect(patch.confidence["tasks.0"]).toBe("medium");
+  });
+
+  it("accepts section-keyed patches and filters updates by tab", () => {
+    const patch = normalizeEmberFieldPatch({
+      fields: {
+        research: {
+          urgency: { value: 9, confidence: "high" },
+          thesis: "This should only survive in Notes."
+        },
+        opportunity: {
+          tam_m: 500
+        },
+        notes: {
+          thesis: "Finance controls the buying moment."
+        },
+        tasks: [{ text: "Call five buyers", category: "research" }]
+      }
+    });
+
+    const discoverPatch = filterPatchForSection(patch, "Discover");
+    expect(discoverPatch.opportunity).toEqual({ urgency: 9 });
+    expect(discoverPatch.notes).toEqual({});
+    expect(discoverPatch.tasks).toBeUndefined();
+
+    const buildPatch = filterPatchForSection(patch, "Build");
+    expect(buildPatch.tasks?.[0]).toMatchObject({ text: "Call five buyers" });
+    expect(buildPatch.notes).toEqual({});
   });
 });

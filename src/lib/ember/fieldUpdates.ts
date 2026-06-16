@@ -9,18 +9,26 @@ import type {
   OpportunityNotes,
   Phase,
   PriorStartupExperience,
+  Priority,
   RiskAssessment,
   RiskCategory,
   RiskMatrixValue,
   RiskStatus,
+  Task,
+  TaskCategory,
   TimeToCopy
 } from "@/types";
+
+export type EmberConfidence = "low" | "medium" | "high";
+export type EmberSection = "Discover" | "Market" | "Build" | "Risks" | "Signal";
 
 export type EmberFieldPatch = {
   opportunity: Partial<Opportunity>;
   notes: Partial<OpportunityNotes>;
   risks?: Array<Partial<RiskAssessment>>;
   milestones?: Array<Partial<Milestone>>;
+  tasks?: Array<Partial<Task>>;
+  confidence: Record<string, EmberConfidence>;
 };
 
 const opportunityTextFields = [
@@ -43,6 +51,46 @@ const opportunityTextFields = [
 ] as const satisfies readonly (keyof Opportunity)[];
 
 const notesTextFields = ["thesis", "customer_notes", "open_questions", "kill_conditions", "moat_insight"] as const satisfies readonly (keyof OpportunityNotes)[];
+
+export const emberSectionFields: Record<EmberSection, { opportunity: readonly (keyof Opportunity)[]; notes: readonly (keyof OpportunityNotes)[]; collections: ReadonlyArray<"risks" | "milestones" | "tasks"> }> = {
+  Discover: {
+    opportunity: ["problem_statement", "target_customer_persona", "key_insight", "falsifiable_hypothesis", "urgency", "pain", "frequency", "willingness_to_pay", "customer_discovery_count", "timing_signals", "domain_expertise", "network_access", "unfair_insight", "founder_statement"],
+    notes: [],
+    collections: []
+  },
+  Market: {
+    opportunity: ["tam_m", "sam_m", "som_m", "growth_rate_pct", "market_type", "timing_signals", "business_model", "pricing_model", "acv", "competitors"],
+    notes: [],
+    collections: []
+  },
+  Risks: {
+    opportunity: ["moat_network", "moat_data", "moat_switching", "moat_scale", "moat_brand", "moat_ip", "moat_summary", "time_to_copy"],
+    notes: ["kill_conditions", "moat_insight"],
+    collections: ["risks"]
+  },
+  Build: {
+    opportunity: ["phase", "kpi_primary", "kpi_revenue", "kpi_learning", "sprint_goal_90_day", "runway_months", "next_fundraise_trigger"],
+    notes: [],
+    collections: ["milestones", "tasks"]
+  },
+  Signal: {
+    opportunity: ["lois_verbal_commitments", "waitlist_signups", "pilot_customers", "revenue_to_date", "last_customer_conversation_date", "signal_notes", "conviction_stars", "prior_startup_experience", "co_founder_status", "capital_access"],
+    notes: [],
+    collections: []
+  }
+};
+
+const emberSectionAliases: Record<string, EmberSection> = {
+  research: "Discover",
+  fit: "Discover",
+  market: "Market",
+  moat: "Risks",
+  risks: "Risks",
+  build: "Build",
+  notes: "Discover",
+  signal: "Signal",
+  discover: "Discover"
+};
 
 const opportunityNumberFields = {
   urgency: [1, 10],
@@ -81,6 +129,8 @@ const heatLevels: HeatLevel[] = ["low", "medium", "high"];
 const riskCategories: RiskCategory[] = ["market", "technical", "regulatory", "team", "financial", "timing"];
 const riskMatrixValues: RiskMatrixValue[] = ["low", "high"];
 const riskStatuses: RiskStatus[] = ["open", "in_progress", "mitigated"];
+const taskCategories: TaskCategory[] = ["research", "product", "sales", "ops", "hiring"];
+const priorities: Priority[] = ["low", "medium", "high"];
 
 const enumAliases: Record<string, string> = {
   "0->1": "0→1",
@@ -108,7 +158,9 @@ const enumAliases: Record<string, string> = {
   "friends & family": "friends_family",
   "friends and family": "friends_family",
   "seeking seed": "seeking_seed",
-  "in progress": "in_progress"
+  "in progress": "in_progress",
+  operations: "ops",
+  operational: "ops"
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -118,6 +170,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function unwrapFieldValue(value: unknown) {
   const record = asRecord(value);
   return record && "value" in record ? record.value : value;
+}
+
+function confidenceFrom(value: unknown): EmberConfidence | undefined {
+  const record = asRecord(value);
+  const confidence = record?.confidence;
+  return confidence === "low" || confidence === "medium" || confidence === "high" ? confidence : undefined;
+}
+
+function setConfidence(confidence: Record<string, EmberConfidence>, path: string, value: unknown) {
+  const fieldConfidence = confidenceFrom(value);
+  if (fieldConfidence) confidence[path] = fieldConfidence;
 }
 
 function stringFrom(value: unknown) {
@@ -189,6 +252,14 @@ function decisionLogFrom(value: unknown) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
+function sourceSections(fields: Record<string, unknown>) {
+  const sections = ["discover", "research", "market", "moat", "risks", "build", "execute", "execution", "notes", "fit", "signal"];
+  return sections.reduce<Record<string, unknown>>((combined, section) => {
+    const source = asRecord(fields[section]);
+    return source ? { ...combined, ...source } : combined;
+  }, {});
+}
+
 export function extractJsonPayloads(content: string) {
   const candidates = [...content.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => match[1].trim());
   candidates.push(content.trim());
@@ -213,15 +284,18 @@ export function extractJsonPayloads(content: string) {
 export function normalizeEmberFieldPatch(payload: unknown): EmberFieldPatch {
   const root = asRecord(payload);
   const fields = asRecord(root?.fields) ?? root ?? {};
-  const opportunitySource = { ...fields, ...(asRecord(fields.opportunity) ?? {}) };
-  const notesSource = asRecord(fields.notes) ?? {};
+  const sectionFields = sourceSections(fields);
+  const opportunitySource = { ...fields, ...sectionFields, ...(asRecord(fields.opportunity) ?? {}) };
+  const notesSource = { ...sectionFields, ...(asRecord(fields.notes) ?? {}) };
   const opportunity: Partial<Opportunity> = {};
   const notes: Partial<OpportunityNotes> = {};
+  const confidence: Record<string, EmberConfidence> = {};
 
   for (const field of opportunityTextFields) {
     if (field in opportunitySource) {
       const value = stringFrom(opportunitySource[field]);
       if (value !== undefined) opportunity[field] = value as never;
+      setConfidence(confidence, `opportunity.${field}`, opportunitySource[field]);
     }
   }
 
@@ -229,37 +303,67 @@ export function normalizeEmberFieldPatch(payload: unknown): EmberFieldPatch {
     if (field in opportunitySource) {
       const value = numberFrom(opportunitySource[field], min, max);
       if (value !== undefined) opportunity[field] = value as never;
+      setConfidence(confidence, `opportunity.${field}`, opportunitySource[field]);
     }
   }
 
   if ("timing_signals" in opportunitySource) {
     const value = stringArrayFrom(opportunitySource.timing_signals);
     if (value) opportunity.timing_signals = value;
+    setConfidence(confidence, "opportunity.timing_signals", opportunitySource.timing_signals);
   }
   if ("competitors" in opportunitySource) {
     const value = competitorsFrom(opportunitySource.competitors);
     if (value) opportunity.competitors = value;
+    setConfidence(confidence, "opportunity.competitors", opportunitySource.competitors);
   }
-  if ("phase" in opportunitySource) opportunity.phase = enumFrom(opportunitySource.phase, phases);
-  if ("market_type" in opportunitySource) opportunity.market_type = enumFrom(opportunitySource.market_type, marketTypes);
-  if ("time_to_copy" in opportunitySource) opportunity.time_to_copy = enumFrom(opportunitySource.time_to_copy, timeToCopyValues);
-  if ("prior_startup_experience" in opportunitySource) opportunity.prior_startup_experience = enumFrom(opportunitySource.prior_startup_experience, priorStartupExperienceValues);
-  if ("co_founder_status" in opportunitySource) opportunity.co_founder_status = enumFrom(opportunitySource.co_founder_status, coFounderStatusValues);
-  if ("capital_access" in opportunitySource) opportunity.capital_access = enumFrom(opportunitySource.capital_access, capitalAccessValues);
+  if ("phase" in opportunitySource) {
+    const value = enumFrom(opportunitySource.phase, phases);
+    if (value) opportunity.phase = value;
+    setConfidence(confidence, "opportunity.phase", opportunitySource.phase);
+  }
+  if ("market_type" in opportunitySource) {
+    const value = enumFrom(opportunitySource.market_type, marketTypes);
+    if (value) opportunity.market_type = value;
+    setConfidence(confidence, "opportunity.market_type", opportunitySource.market_type);
+  }
+  if ("time_to_copy" in opportunitySource) {
+    const value = enumFrom(opportunitySource.time_to_copy, timeToCopyValues);
+    if (value) opportunity.time_to_copy = value;
+    setConfidence(confidence, "opportunity.time_to_copy", opportunitySource.time_to_copy);
+  }
+  if ("prior_startup_experience" in opportunitySource) {
+    const value = enumFrom(opportunitySource.prior_startup_experience, priorStartupExperienceValues);
+    if (value) opportunity.prior_startup_experience = value;
+    setConfidence(confidence, "opportunity.prior_startup_experience", opportunitySource.prior_startup_experience);
+  }
+  if ("co_founder_status" in opportunitySource) {
+    const value = enumFrom(opportunitySource.co_founder_status, coFounderStatusValues);
+    if (value) opportunity.co_founder_status = value;
+    setConfidence(confidence, "opportunity.co_founder_status", opportunitySource.co_founder_status);
+  }
+  if ("capital_access" in opportunitySource) {
+    const value = enumFrom(opportunitySource.capital_access, capitalAccessValues);
+    if (value) opportunity.capital_access = value;
+    setConfidence(confidence, "opportunity.capital_access", opportunitySource.capital_access);
+  }
   if ("last_customer_conversation_date" in opportunitySource) {
     const value = dateFrom(opportunitySource.last_customer_conversation_date);
     if (value !== undefined) opportunity.last_customer_conversation_date = value;
+    setConfidence(confidence, "opportunity.last_customer_conversation_date", opportunitySource.last_customer_conversation_date);
   }
 
   for (const field of notesTextFields) {
     if (field in notesSource) {
       const value = stringFrom(notesSource[field]);
       if (value !== undefined) notes[field] = value as never;
+      setConfidence(confidence, `notes.${field}`, notesSource[field]);
     }
   }
   if ("decision_log" in notesSource) {
     const value = decisionLogFrom(notesSource.decision_log);
     if (value) notes.decision_log = value;
+    setConfidence(confidence, "notes.decision_log", notesSource.decision_log);
   }
 
   const risks = Array.isArray(fields.risks)
@@ -283,6 +387,10 @@ export function normalizeEmberFieldPatch(payload: unknown): EmberFieldPatch {
         .filter((item): item is Partial<RiskAssessment> => Boolean(item))
     : undefined;
 
+  if (risks) {
+    (fields.risks as unknown[]).forEach((risk: unknown, index: number) => setConfidence(confidence, `risks.${index}`, risk));
+  }
+
   const milestones = Array.isArray(fields.milestones)
     ? fields.milestones
         .map((item): Partial<Milestone> | null => {
@@ -300,5 +408,68 @@ export function normalizeEmberFieldPatch(payload: unknown): EmberFieldPatch {
         .filter((item): item is Partial<Milestone> => Boolean(item))
     : undefined;
 
-  return { opportunity, notes, risks, milestones };
+  if (milestones) {
+    (fields.milestones as unknown[]).forEach((milestone: unknown, index: number) => setConfidence(confidence, `milestones.${index}`, milestone));
+  }
+
+  const tasks = Array.isArray(fields.tasks)
+    ? fields.tasks
+        .map((item): Partial<Task> | null => {
+          const task = asRecord(item);
+          if (!task) return null;
+          const text = stringFrom(task.text ?? task.title ?? task.task);
+          if (!text) return null;
+          return {
+            id: stringFrom(task.id),
+            text,
+            category: enumFrom(task.category, taskCategories) ?? "research",
+            phase: enumFrom(task.phase, phases),
+            priority: enumFrom(task.priority, priorities) ?? "medium",
+            done: Boolean(unwrapFieldValue(task.done)),
+            due_date: dateFrom(task.due_date),
+            created_at: stringFrom(task.created_at)
+          };
+        })
+        .filter((item): item is Partial<Task> => Boolean(item))
+    : undefined;
+
+  if (tasks) {
+    (fields.tasks as unknown[]).forEach((task: unknown, index: number) => setConfidence(confidence, `tasks.${index}`, task));
+  }
+
+  return { opportunity, notes, risks, milestones, tasks, confidence };
+}
+
+export function normalizeEmberSection(value: unknown): EmberSection {
+  const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
+  if (raw in emberSectionAliases) return emberSectionAliases[raw];
+  const match = (Object.keys(emberSectionFields) as EmberSection[]).find((section) => section.toLowerCase() === raw);
+  return match ?? "Discover";
+}
+
+export function filterPatchForSection(patch: EmberFieldPatch, section: EmberSection): EmberFieldPatch {
+  const allowed = emberSectionFields[section];
+  const opportunity = Object.fromEntries(
+    Object.entries(patch.opportunity).filter(([key]) => allowed.opportunity.includes(key as keyof Opportunity))
+  ) as Partial<Opportunity>;
+  const notes = Object.fromEntries(
+    Object.entries(patch.notes).filter(([key]) => allowed.notes.includes(key as keyof OpportunityNotes))
+  ) as Partial<OpportunityNotes>;
+  const confidence = Object.fromEntries(
+    Object.entries(patch.confidence).filter(([key]) => {
+      const [scope, name] = key.split(".");
+      if (scope === "opportunity") return allowed.opportunity.includes(name as keyof Opportunity);
+      if (scope === "notes") return allowed.notes.includes(name as keyof OpportunityNotes);
+      return allowed.collections.includes(scope as "risks" | "milestones" | "tasks");
+    })
+  );
+
+  return {
+    opportunity,
+    notes,
+    risks: allowed.collections.includes("risks") ? patch.risks : undefined,
+    milestones: allowed.collections.includes("milestones") ? patch.milestones : undefined,
+    tasks: allowed.collections.includes("tasks") ? patch.tasks : undefined,
+    confidence
+  };
 }

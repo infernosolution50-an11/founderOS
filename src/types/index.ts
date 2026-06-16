@@ -3,8 +3,7 @@ export type AgentType =
   | "market"
   | "risk"
   | "doc_synthesizer"
-  | "execution"
-  | "moat";
+  | "execution";
 
 export type TaskCategory = "research" | "product" | "sales" | "ops" | "hiring";
 export type Priority = "low" | "medium" | "high";

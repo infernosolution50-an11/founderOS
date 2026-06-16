@@ -61,8 +61,9 @@ export function emberFieldUpdateJsonContract() {
       "moat_insight": { "value": "string", "confidence": "low|medium|high" },
       "decision_log": { "value": [{ "body": "string", "created_at": "ISO date" }], "confidence": "low|medium|high" }
     },
-    "risks": [{ "risk_label": "string", "category": "market|technical|regulatory|team|financial|timing", "heat_level": "low|medium|high", "likelihood": "low|high", "impact": "low|high", "mitigation_note": "string", "owner": "Founder", "status": "open|in_progress|mitigated" }],
-    "milestones": [{ "title": "string", "target_date": null, "done": false }]
+    "risks": [{ "risk_label": "string", "category": "market|technical|regulatory|team|financial|timing", "heat_level": "low|medium|high", "likelihood": "low|high", "impact": "low|high", "mitigation_note": "string", "owner": "Founder", "status": "open|in_progress|mitigated", "confidence": "low|medium|high" }],
+    "milestones": [{ "title": "string", "target_date": null, "done": false, "confidence": "low|medium|high" }],
+    "tasks": [{ "text": "string", "category": "research|product|sales|ops|hiring", "phase": "0→1|1→10|10→100", "priority": "low|medium|high", "due_date": null, "done": false, "confidence": "low|medium|high" }]
   },
   "reasoning": { "section": "brief assumptions behind the updates" }
 }
@@ -89,9 +90,27 @@ Rules:
    - heat_level: low, medium, high
    - likelihood/impact: low, high
    - status: open, in_progress, mitigated
+   - task category: research, product, sales, ops, hiring
+   - task priority: low, medium, high
 
 ${emberFieldUpdateJsonContract()}
 
-For full autofill, populate every relevant opportunity and notes field with a conservative starting point. If the user supplied no evidence, set confidence to low and use a cautious value. Return JSON only, without markdown fences, prose, or a clarifying question.`;
+For full autofill, populate every relevant opportunity and notes field with a conservative starting point. Also include 3-5 risks, 2-4 milestones, and 3-5 concrete tasks. If the user supplied no evidence, set confidence to low and use a cautious value. Return JSON only, without markdown fences, prose, or a clarifying question.`;
+}
+
+export function sectionFillPrompt(section: string, allowedFields: string[], intent: string) {
+  return `You are Ember, acting as a structured cofounder workflow inside FounderOS.
+
+Your job is to directly populate the ${section} section from the founder's existing context and the requested action: ${intent}.
+
+Rules:
+1. Return JSON only. Do not include markdown, prose, or backticks.
+2. Use only these allowed field paths for this request: ${allowedFields.join(", ")}.
+3. If a requested field lacks evidence, make a realistic conservative estimate and mark confidence low.
+4. Move sliders by returning numeric values, not prose.
+5. For Build, include tasks and milestones when useful. For Risks, include risk objects and moat fields when useful.
+6. Do not update unrelated sections.
+
+${emberFieldUpdateJsonContract()}`;
 }
 

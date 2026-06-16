@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("landing page links to signup and login", async ({ page }) => {
+test("root redirects unauthenticated visitors to login", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /start building/i }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: /log in/i }).first()).toBeVisible();
+  await expect(page).toHaveURL(/\/login/);
 });
 
 test("login and signup pages render", async ({ page }) => {

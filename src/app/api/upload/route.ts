@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth";
 import { checkRateLimit } from "@/lib/api/rateLimit";
 import { isUuid, jsonError } from "@/lib/api/validation";
-import { extractJsonPayloads, normalizeEmberFieldPatch } from "@/lib/ember/fieldUpdates";
 import { extractTextFromDocument, supportedDocumentTypes } from "@/lib/extractText";
-import { buildOpportunityContext } from "@/lib/openai/context";
-import { getOpenAIHeaders, EMBER_MODEL, RESPONSES_API_URL } from "@/lib/openai/client";
-import { selectAgentPrompt } from "@/lib/openai/agents";
 
 export const runtime = "nodejs";
 
@@ -93,108 +89,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: documentError.message }, { status: 500 });
   }
 
-  const [{ data: notes }, { data: risks }, { data: tasks }, { data: documents }] = await Promise.all([
-    supabase.from("opportunity_notes").select("*").eq("opportunity_id", opportunityId).eq("user_id", user.id).maybeSingle(),
-    supabase.from("risk_assessments").select("*").eq("opportunity_id", opportunityId).eq("user_id", user.id),
-    supabase.from("tasks").select("*").eq("opportunity_id", opportunityId).eq("user_id", user.id),
-    supabase.from("documents").select("*").eq("opportunity_id", opportunityId).eq("user_id", user.id)
-  ]);
-
-  const message = `Synthesize uploaded document: ${file.name}`;
-  await supabase.from("ember_messages").insert({
-    opportunity_id: opportunityId,
-    user_id: user.id,
-    role: "user",
-    content: message,
-    agent_type: "doc_synthesizer"
-  });
-
-  const context = buildOpportunityContext({
-    opportunity,
-    notes,
-    risks: risks ?? [],
-    tasks: tasks ?? [],
-    documents: documents ?? [],
-    extra: `Uploaded document text from ${file.name}:\n${extractedText.slice(0, 30000)}`
-  });
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(RESPONSES_API_URL, {
-      method: "POST",
-      headers: getOpenAIHeaders(),
-      body: JSON.stringify({
-        model: EMBER_MODEL,
-        instructions: selectAgentPrompt("doc_synthesizer", context),
-        input: message,
-        stream: true,
-        max_output_tokens: 1500
-      })
-    });
-  } catch (openAiError) {
-    console.error("Document synthesis request failed", openAiError);
-    return NextResponse.json({ error: "Document uploaded, but Ember synthesis is unavailable.", document }, { status: 202 });
-  }
-
-  if (!upstream.ok || !upstream.body) {
-    console.error("Document synthesis failed", await upstream.text().catch(() => ""));
-    return NextResponse.json({ error: "Document uploaded, but Ember synthesis is unavailable.", document }, { status: 202 });
-  }
-
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  let assistantContent = "";
-  let responseId: string | undefined;
-  let bufferText = "";
-
   const stream = new ReadableStream({
-    async start(controller) {
-      const reader = upstream.body!.getReader();
-
-      try {
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          bufferText += decoder.decode(value, { stream: true });
-          const events = bufferText.split("\n\n");
-          bufferText = events.pop() ?? "";
-
-          for (const event of events) {
-            const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
-            if (!dataLine) continue;
-            const raw = dataLine.slice(6).trim();
-            if (raw === "[DONE]") continue;
-            const payload = JSON.parse(raw);
-
-            if (payload.type === "response.created") responseId = payload.response?.id;
-            if (payload.type === "response.output_text.delta") {
-              const text = payload.delta ?? "";
-              assistantContent += text;
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "delta", text, document })}\n\n`));
-            }
-            if (payload.type === "response.completed") responseId = payload.response?.id ?? responseId;
-          }
-        }
-      } catch (streamError) {
-        console.error("Document synthesis stream failed", streamError);
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "Document synthesis failed.", document })}\n\n`));
-      }
-
-      await supabase.from("ember_messages").insert({
-        opportunity_id: opportunityId,
-        user_id: user.id,
-        role: "assistant",
-        content: assistantContent,
-        agent_type: "doc_synthesizer",
-        response_id: responseId ?? null
-      });
-
-      const [fieldUpdates] = extractJsonPayloads(assistantContent);
-      if (fieldUpdates) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "field_updates", payload: normalizeEmberFieldPatch(fieldUpdates), document })}\n\n`));
-      }
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", responseId, document })}\n\n`));
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", document })}\n\n`));
       controller.close();
     }
   });

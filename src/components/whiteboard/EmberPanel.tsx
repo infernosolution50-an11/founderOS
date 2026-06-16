@@ -25,13 +25,10 @@ type EmberPanelProps = {
 };
 
 const quickActions: Record<string, string[]> = {
-  Research: ["Why does timing matter now?", "Who is the real customer?"],
+  Discover: ["Why does timing matter now?", "Who is the real customer?"],
   Market: ["Analyze this market", "Find the gap competitors miss"],
-  Moat: ["Build the moat", "What's my strongest defensibility angle?"],
   Risks: ["Stress-test the thesis", "Find hidden risks"],
-  Execute: ["Generate action plan", "What's the highest leverage move this week?"],
-  Notes: ["Synthesize notes", "What am I not asking?"],
-  Fit: ["Pressure-test founder fit", "What edge am I missing?"],
+  Build: ["Generate action plan", "What's the highest leverage move this week?"],
   Signal: ["Assess validation signal", "What proof is still missing?"]
 };
 

@@ -15,12 +15,14 @@ export function buildOpportunityContext({ opportunity, notes, risks = [], tasks 
     `Notes: ${JSON.stringify(notes ?? {}, null, 2)}`,
     `Risks: ${JSON.stringify(risks, null, 2)}`,
     `Tasks: ${JSON.stringify(tasks, null, 2)}`,
-    `Documents: ${JSON.stringify(
+    `Documents with extracted content: ${JSON.stringify(
       documents.map((document) => ({
         filename: document.filename,
         file_type: document.file_type,
-        file_size_bytes: document.file_size_bytes,
-        created_at: document.created_at
+        content:
+          typeof document.extracted_text === "string" && document.extracted_text.trim()
+            ? document.extracted_text.slice(0, 8000)
+            : "(no text extracted)"
       })),
       null,
       2
@@ -32,6 +34,6 @@ export function buildOpportunityContext({ opportunity, notes, risks = [], tasks 
 }
 
 export function normalizeAgentType(agentType: unknown): AgentType {
-  const allowed: AgentType[] = ["core", "market", "risk", "doc_synthesizer", "execution", "moat"];
+  const allowed: AgentType[] = ["core", "market", "risk", "doc_synthesizer", "execution"];
   return allowed.includes(agentType as AgentType) ? (agentType as AgentType) : "core";
 }

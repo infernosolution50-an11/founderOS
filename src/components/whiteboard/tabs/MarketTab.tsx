@@ -14,6 +14,11 @@ const marketTypes: Array<{ label: string; value: MarketType }> = [
   { label: "Clone Market", value: "clone_market" }
 ];
 const timingSignals = ["Regulatory change", "New technology", "Behavior shift", "Market unlock", "Budget pressure"];
+const marketSizeLabels = {
+  tam_m: "Total market size (rough $M)",
+  sam_m: "Reachable market ($M)",
+  som_m: "Your realistic slice ($M)"
+} as const;
 
 export function MarketTab({ opportunity, isReadOnly, onOpportunityChange, onAgentAction, onFillSection }: WhiteboardTabProps) {
   const competitors = opportunity.competitors ?? [];
@@ -38,7 +43,7 @@ export function MarketTab({ opportunity, isReadOnly, onOpportunityChange, onAgen
       <div className="grid gap-4 md:grid-cols-3">
         {(["tam_m", "sam_m", "som_m"] as const).map((key) => (
           <label key={key} className="rounded-2xl border border-os-border bg-os-surface p-4 text-sm text-os-sub">
-            <FieldLabel label={`${key.toUpperCase()} ($M)`} tooltip={fieldTooltips[key]} />
+            <FieldLabel label={marketSizeLabels[key]} tooltip={fieldTooltips[key]} />
             <input
               type="number"
               value={opportunity[key]}
@@ -172,7 +177,7 @@ export function MarketTab({ opportunity, isReadOnly, onOpportunityChange, onAgen
       <div className="rounded-2xl border border-os-indigo/40 bg-os-indigo/10 p-4">
         <h3 className="font-display text-lg font-semibold">Market snapshot</h3>
         <p className="mt-2 text-sm text-os-sub">
-          TAM ${opportunity.tam_m}M, SAM ${opportunity.sam_m}M, SOM ${opportunity.som_m}M, growing {opportunity.growth_rate_pct}% YoY.
+          Total market ${opportunity.tam_m}M, reachable market ${opportunity.sam_m}M, realistic slice ${opportunity.som_m}M, growing {opportunity.growth_rate_pct}% YoY.
         </p>
         <button
           type="button"
